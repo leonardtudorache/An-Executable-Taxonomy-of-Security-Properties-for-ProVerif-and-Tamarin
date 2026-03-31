@@ -1,0 +1,30 @@
+theory PlainEncryptionSecrecy
+begin
+
+builtins: symmetric-encryption
+
+// 1. A shared key exists between Alice and Bob
+rule Setup_Key:
+    [ Fr(~k) ] 
+  --> 
+    [ !SharedKey($A, $B, ~k) ]
+
+// 2. Alice encrypts a fresh secret and sends it
+rule Alice_Sends:
+    [ !SharedKey($A, $B, k), Fr(~secretMessage) ]
+  --[ Secret(~secretMessage) ]->
+    [ Out(senc(~secretMessage, k)) ]
+
+// 3. Bob receives and decrypts
+rule Bob_Receives:
+    [ !SharedKey($A, $B, k), In(senc(m, k)) ]
+  --[ Completed(m) ]->
+    [ ]
+
+lemma Secrecy: "All x #i. Secret(x) @i ==> not (Ex #j. K(x)@j)"
+
+lemma Executability:
+  exists-trace
+  "∃ m #i. Completed(m) @ i"
+
+end

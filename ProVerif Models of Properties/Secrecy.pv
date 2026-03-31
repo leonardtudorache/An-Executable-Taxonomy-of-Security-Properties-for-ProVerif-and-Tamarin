@@ -1,0 +1,20 @@
+type key.
+free public: channel.
+
+fun senc(bitstring, key): bitstring.
+reduc forall m: bitstring, k: key; sdec(senc(m, k), k) = m.
+
+free secret_msg: bitstring [private].
+query attacker(secret_msg).
+
+let processAlice(k: key) =
+    out(public, senc(secret_msg, k)).
+
+let processBob(k: key) =
+    in(public, x: bitstring);
+    let m = sdec(x, k) in
+    0.
+
+process
+    new k: key;
+    (!processAlice(k) | !processBob(k))

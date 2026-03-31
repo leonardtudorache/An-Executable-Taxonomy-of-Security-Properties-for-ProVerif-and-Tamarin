@@ -1,0 +1,98 @@
+(* Channel declarations *)
+free ch:channel. (*public channel*)
+free sch:channel[private]. (*secure channel*)
+
+(*---session key secrets---*)
+free SKusecret:bitstring[private].
+
+(*---constants---*)
+const P:bitstring.
+
+(*---functions---*)
+fun h(bitstring):bitstring. (*hash function*)
+fun xor(bitstring,bitstring):bitstring. (*exclusive-or*)
+fun rox(bitstring,bitstring):bitstring. (*exclusive-or*)
+fun con(bitstring,bitstring):bitstring. (*string concatenation*)
+fun mod(bitstring,bitstring):bitstring. (*mod*)
+fun mul(bitstring,bitstring):bitstring. (*point multiplication*)
+
+(*---reduc and equation---*)
+equation forall m:bitstring,n:bitstring; xor(xor(m,n),n)=m.
+equation forall m:bitstring,n:bitstring; rox(n,rox(n,m))=m.
+equation forall m:bitstring,n:bitstring; mul(mul(P,m),n)=mul(mul(P,n),m).
+reduc forall m:bitstring,n:bitstring; getl(con(m,n))=m.
+reduc forall m:bitstring,n:bitstring; getr(con(m,n))=n.
+
+(*---encryption---*)
+fun enc(bitstring,bitstring):bitstring.
+reduc forall m:bitstring,k:bitstring; dec(enc(m,k),k)=m.
+
+(*---queries---*)
+query attacker(SKusecret).
+query SK:bitstring;inj-event(UserKey(SK)) ==>inj-event(ServerKey(SK)).
+
+(* Code of User *)
+let User(IDi:bitstring,PWi:bitstring)=
+    out(sch,IDi);
+    in(sch,(X:bitstring,E:bitstring,Vi:bitstring));
+    new ai:bitstring;
+    let RPWi = h(con(con(IDi,PWi),ai)) in
+    let Bi = xor(Vi,h(con(RPWi,ai))) in
+    new n0:bitstring;
+    let Ai = mod(n0,h(con(con(IDi,PWi),ai))) in
+    !
+    (
+    if Ai = mod(n0,h(con(con(IDi,PWi),ai))) then
+        let RPWi = h(con(con(IDi,PWi),ai)) in
+        let Vi = xor(Bi,h(con(RPWi,ai))) in
+        new a:bitstring;
+        let K1 = mul(E,a) in
+        let K2 = mul(X,a) in
+        let M1 = h(con(con(con(IDi,K1),K2),Vi)) in
+        let M2 = enc(con(IDi,Vi),K2) in
+        out(ch,(M1,M2,K1));
+        in(ch,(K3:bitstring,M3:bitstring));
+        let K4 = mul(K3,a) in
+        let SKh = h(con(con(K4,IDi),Vi))in
+        if M3 = h(con(con(con(con(K3,K2),Vi),IDi),K4)) then
+            let SKu = SKh in
+            out(ch,enc(SKusecret,SKu));
+            0
+    ).
+
+(* Code of Service Provider *)
+let Server(x:bitstring,X:bitstring,P:bitstring) =
+    in(sch,(IDi:bitstring));
+    new ri:bitstring;
+    let Vi = h(con(con(IDi,x),ri)) in
+    out(sch,(X,P,Vi));
+    !
+    (
+    in(ch,(M1:bitstring,M2:bitstring,K1:bitstring));
+    let K2 = mul(K1,x) in
+    let IDiVi = dec(M2,K2) in
+    let IDi = getl(IDiVi) in
+    let Vi = getr(IDiVi) in
+    if Vi = h(con(con(IDi,x),ri)) then
+        if M1 = h(con(con(con(IDi,K1),K2),Vi)) then
+            new b:bitstring;
+            let K3 = mul(P,b) in
+            let K4 = mul(K1,b) in
+            let M3 = h(con(con(con(con(K3,K2),Vi),IDi),K4)) in
+            let SKr = h(con(con(K4,IDi),Vi)) in
+            out(ch,(K3,M3));
+            0
+    ).
+
+process
+    new x:bitstring;
+    new IDi:bitstring;(*the user's identity*)
+    new PWi:bitstring;(*the user's password*)
+    let X = mul(P,x) in
+    ( (!User(IDi,PWi)) | (!Server(x,X,P)) )
+
+(*-----------------------------------------------------------------*)
+(*Verification summary:
+Query not attacker(SKusecret[]) is true.
+Query inj-event(UserKey(SK)) ==> inj-event(ServerKey(SK)) is true.*)
+(*-----------------------------------------------------------------*)

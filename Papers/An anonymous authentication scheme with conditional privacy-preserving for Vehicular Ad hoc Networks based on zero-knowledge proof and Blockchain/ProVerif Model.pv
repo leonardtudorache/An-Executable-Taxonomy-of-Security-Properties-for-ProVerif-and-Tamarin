@@ -1,0 +1,177 @@
+
+(************ Channel ************)
+private free ch_LEA, ch_RCA, scL_RA, scRA_V, scRA_RU, ch_BN.
+free ch1, ch2.
+
+(************ Constructors ************)
+fun T/1, pk/1, sk/1, con/2, CRH/1, emul/2, inv/1.
+fun add/2.
+equation add(x, y) = add(y, x).
+fun mul/2.
+reduc multinv(mult(x, mul(y, z)), z) = mul(x, y).
+fun ADD/2.
+equation ADD(P, Q) = ADD(Q, P).
+fun BLP0/2.
+equation BLP0(emul(n, g1), g2) = BLP0(g1, emul(n, g2)).
+fun BLP/3.
+equation BLP(g1, g2, n) = BLP0(emul(n, g1), g2).
+fun BLMUL/2.
+equation BLMUL(m, BLP(g1, g2, n)) = BLMUL(n, BLP(g1, g2, m)).
+fun getmess/1.
+equation getmess(sign(sk(k), m)) = m.
+fun checksign/3.
+equation checksign(pk(k), sign(sk(k), m), m) = true.
+
+(************ Zero-knowledge Proof ************)
+(* auto generated ZK-theory for  ZK(5; 5; land(eq(beta4, CRH(con(con(con(alpha1, alpha2), beta1), beta3))), cheksign(beta2, alpha5, beta4)) Where alpha1 = sigmaVi, alpha2 = IDVi, alpha3 = PNV i, alpha4 = pkVi, alpha5 = CertVi, beta1 = TVi, beta2 = pkSHK, beta3 = IDLEA, beta4 = sigma, beta5 = PK *)
+equation zk0(xalpha1, xalpha2, xalpha3, xalpha4, xalpha5, xbeta1, xbeta2, xbeta3, xbeta4, xbeta5) = pzk0(xalpha1, xalpha2, xalpha3, xalpha4, xalpha5, xbeta1, xbeta2, xbeta3, xbeta4, xbeta5, land(eq(xbeta4, CRH(con(con(con(xalpha1, xalpha2), xbeta1), xbeta3))), checksign(xbeta2, xalpha5, xbeta4))).
+equation zkver0(pzk0(xalpha1, xalpha2, xalpha3, xalpha4, xalpha5, xbeta1, xbeta2, xbeta3, xbeta4, xbeta5, true)) = true.
+
+(************ Query ************)
+query attacker: id_Vi.
+query ev:GetCertificate(id_V) ⟹ ev:Register(id_V).
+query evinj:endAuth(M) ⟹ evinj:beginAuth(M).
+
+(************ Code for LEA ************)
+let Init =
+  new sk_LEA, p;
+  let pk_LEA = emul(sk_LEA, g1) in
+  out(ch1, (p, pk_LEA));
+  out(ch_LEA, sk_LEA);
+  new alpha, beta, delta, gama, x;
+  let PK = (emul(delta, g1), emul(delta, g2), emul(mult(mult(gama, T(x)), inv(delta)), g1), emul(mult(T(x), inv(delta)), g1)) in
+  let VK = (emul(delta, g2), BLP(g1, g2, mult(gama, T(x))), BLP(g1, g2, T(x))) in
+  out(ch2, (PK, VK)).
+
+let RCAInit =
+  in (scL_RA, x);
+  let (id_RCA, sk_RCA, pk_RCA) = X in
+  out(ch1, pk_SHK);
+  out(scL_RA, sk_SHK).
+
+let LEA = Init ∣ !RCAInit.
+
+(************ Code for RCA ************)
+let RCA =
+  new sk_RCA;
+  in (ch1, X);
+  let k = CRH(con(id_RCA, sk_RCA)) in
+  let pk_RCA = emul(k, g1) in
+  out (scL_RA, (id_RCA, sk_RCA, pk_RCA));
+  out (ch1, pk_RCA).
+
+let VReg =
+  in (ch1, X);
+  let pk_SHK = x in
+  in (scL_RA, sk_SHK);
+  in (scRA_V, Y);
+  let (ID_Vreg, pk_Vreg, PNVreg) = Y in
+  new sigmaV, TV;
+  (* TV: expiration period of certificate *)
+  let sigma = CRH(con(con(con(con(con(sigmaV, ID_Vreg), pk_Vreg), PNVreg), TV), pk_SHK, ID_LEA)) in
+  let sign_sigma = sign(sk_SHK, sigma) in
+  let Cert_V = (sigma, sign_sigma) in
+  event Register(ID_Vreg);
+  out (scRA_V, (ID_Vreg, sigmaV, TV, Cert_V)).
+
+let RReg =
+  in (ch1, X);
+  let pk_SHK = x in
+  in (scL_RA, sk_SHK);
+  in (scRA_RU, Y);
+  let (ID_Rreg, Loc_Rreg, pk_Rreg) = Y in
+  new TR;
+  let sigma = CRH(con(con(con(con(con(ID_Rreg, pk_Rreg), Loc_Rreg), TR), pk_SHK), ID_LEA)) in
+  let sign_sigma = sign(sk_SHK, sigma) in
+  event Register(ID_Rreg);
+  let Cert_R = (sigma, sign_sigma) in
+  out (scRA_R, (ID_Rreg, TR, Cert_R)).
+
+let CA = RCA ∣ !VReg ∣ !RReg.
+
+(************ Code for Vehicle ************)
+let V =
+  new sk_V, PNV;
+  in (ch1, X);
+  let (p, pk_SHK) = X in
+  in (ch2, Y);
+  let (PK, VK) = Y in
+  let k = CRH(con(id_V, sk_V)) in
+  let pk_V = emul(k, g1) in
+  out(scRA_V, (id_V, pk_V, PNV));
+  in (scRA_V, Z);
+  let (ID_Vreg, sigmaV, TV, Cert_V) = Z in
+  if ID_Vreg = id_V then
+    let sigma1 = CRH(con(con(con(con(con(con(sigmaV, ID_V), pk_V, PNV), TV), pk_SHK), ID_LEA))) in
+    let (sigma, sign_sigma) = Cert_V in
+    if getmess(sign_sigma) = sigma1 then
+      event GetCertificate(id_V);
+      let (g_A, g1_B, g_C, g2_B) = zk(sigmaV, id_V, PNV, pk_V, Cert_V, TV, pk_SHK, ID_LEA, sigma, PK) in
+      out(ch_BN, (g_A, g1_B, g_C, g2_B)).
+
+let VsendSoK =
+  in(ch2, X);
+  let (PK, VK) = X in
+  let (delta_g1, delta_g2, gamaTx_delta_g1, Tx_delta_g1) = PK in
+  in (ch_BN, zkp);
+  let (g_A, g1_B, g_C, g2_B) = zkp in
+  new r, s, zeta;
+  new M;
+  let g1_A = ADD(g_A, emul(r, emul(zeta, delta_g1))) in
+  let g11_B = ADD(g1_B, emul(s, emul(zeta, delta_g1))) in
+  let g22_B = ADD(g2_B, emul(s, emul(zeta, delta_g2))) in
+  let g1_C = ADD(ADD(emul(s, g_A), emul(r, g1_B)), emul(mult(r, s), delta_g1)) in
+  let g11_C = ADD(emul(inv(zeta), g1_C), g_C) in
+  let zd = emul(zeta, delta_g2) in
+  let m = CRH(con(con(con(g1_A, g22_B), g11_C), zd), M) in
+  let g1_D = ADD(emul(mult(inv(add(zeta, m)), m), Tx_delta_g1), emul(inv(add(zeta, m)), gamaTx_delta_g1)) in
+  let zkp1 = (g1_A, g11_B, g11_C, g22_B) in
+  let zkp2 = (g1_D, zd) in
+  event beginAuth(M);
+  out(ch1, (zkp1, zkp2, M)).
+
+let VverifySok =
+  in (ch2, Y);
+  let (PK, VK) = Y in
+  let (delta_g2, gamaTx_gt, Tx_gt) = VK in
+  in (ch1, X);
+  let (zkp1, zkp2, M) = X in
+  let xif1 = zkver0(zkp1) in
+  if xif1 = true then
+    let tid = public3(zkp1) in
+    if equals(tid, TID) = true then
+      let (g1_A, g11_B, g11_C, g22_B) = zkp1 in
+      let (g1_D, zd) = zkp2 in
+      let m = CRH(con(con(con(con(g1_A, g22_B), g11_C), zd), M)) in
+      let rhs = ADD(BLMUL(m, Tx_gt), gamaTx_gt) in
+      let lhs = BLPO(g1_D, mult(zd, emul(m, delta_g2))) in
+      if rhs = lhs then
+        event endAuth(M).
+
+let Vehicle = V ∣ !VsendSoK ∣ !VverifySok.
+
+(************ Code for RSU ************)
+let RSU =
+  new sk_R, Loc_R;
+  let k = CRH(con(id_R, sk_R)) in
+  let pk_R = emul(k, g1) in
+  out(scRA_R, (id_R, Loc_R, pk_R));
+  in(scRA_R, X).
+  let (ID_Rreg, TR, sigma, Cert_R) = X in
+  if ID_Rreg = id_R then
+    let sigma1 = CRH(con(con(con(con(con(ID_R, pk_R), Loc_R), TR), pk_SHK), ID_LEA)) in
+    let (sigma, sign_sigma) = Cert_R in
+    if getmess(sign_sigma) = sigma1 then
+      event GetCertificate(id_R).
+
+(************ Main Process ************)
+free TID.
+private free id_Vi.
+free id_Rj.
+process TA ∣ !(let id_R = id_Rj in RSU) ∣ !(let id_V = id_Vi in Vehicle).
+
+(************ The ProVerif Results ************)
+The announced results are as follows:
+- Query not attacker:id_Vi[] in process 1. RESULT not attacker:id_Vi[] is true.
+- Query ev:GetCertificate(id_V) ⟹ ev:Register(id_V) in process 1. RESULT ev:GetCertificate(id_V) ⟹ ev:Register(id_V) is true.
+- Query evinj:endAuth(M[zkp = v, x_3 = v_1, !2 = v_2, !1 = v_3]) ⟹ evinj:beginAuth(M[zkp = v_4, x_3 = v_5, !2 = v_6, !1 = v_7]) in process 1. RESULT evinj:endAuth(M[zkp = v, x_3 = v_1, !2 = v_2, !1 = v_3]) ⟹ evinj:beginAuth(M[zkp = v_4, x_3 = v_5, !2 = v_6, !1 = v_7]) is true.

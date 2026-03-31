@@ -1,0 +1,32 @@
+// tamarin-prover --diff --prove Unlinkability.spthy
+
+theory IdentityPrivacy
+begin
+
+builtins: hashing
+
+/* 1. Setup: Generate the private identities */
+rule Setup:
+    [ Fr(~U), Fr(~V) ]
+  --[ OnlyOnce() ]->
+    [ !ID_U(~U), !ID_V(~V) ]
+
+/* 2. Session One: Always uses Identity U */
+rule Session_One:
+    [ !ID_U(~U), Fr(~r1) ]
+  -->
+    [ Out(h(<~U, ~r1>)) ]
+
+/* 3. Session Two: The 'Choice' rule
+   Uses diff(U, V) to check for observational equivalence.
+*/
+rule Session_Two:
+    [ !ID_U(~U), !ID_V(~V), Fr(~r2) ]
+  -->
+    [ Out(h(<diff(~U, ~V), ~r2>)) ]
+
+/* --- Restrictions --- */
+restriction OnlyOnce:
+    "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
+
+end

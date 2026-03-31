@@ -1,0 +1,58 @@
+/* CINNAMON protocol ======================================
+   Authors: Chiara Bodei, Marco De Vincenzi, Ilaria Matteucci
+   Date: February 2023
+   Reference: Timm Lauser, Daniel Zelle, and Christoph Kraub. 2020.
+   Security Analysis of Automotive Protocols.
+   In Proceedings of the 4th ACM Computer Science in Cars Symposium (CSCS ’20).
+   Association for Computing Machinery, New York, NY, USA, Article 11.
+   ====================================== */
+
+theory cinnamon
+begin
+builtins: multiset, symmetric-encryption
+
+functions:
+  mac/2, trunc/1, ver/3, truncver/3,
+  shk/0 [private], true/0,
+  senc/2, sdec/2
+
+equations:
+  ver(k, m, mac(k, m)) = true,
+  truncver(k, m, trunc(mac(k, m))) = true,
+  sdec(senc(m, k), k) = m
+
+// *** Protocol model ***
+
+rule RevealKey:
+  []
+  --[ Reveal() ]->
+  [ Out(shk) ]
+
+rule InitCtr:
+  []
+  --[ OnlyOnce($A) ]->
+  [ Counter($A, '1', '1') ]
+
+rule SendPDU_1_encrypted:
+  [ Counter($A, ctr_msb, ctr_lsb), Fr(~data), Fr(~key) ]
+  --[
+    LessThan(ctr_lsb, '1' + '1' + '1'),
+    Eq(ctr_lsb, '1' + '1' + '1'),
+    Send($A, ctr_msb + '1', '1',
+      senc(<~data,
+            trunc(<ctr_msb + '1', '1'>),
+            trunc(mac(shk, <~data, ctr_msb + '1', '1'>))
+          >, ~key)),
+    UpdateMsb($A, ctr_msb + '1')
+  ]->
+  [ Out(senc(<~data,
+              trunc(<ctr_msb + '1', '1'>),
+              trunc(mac(shk, <~data, ctr_msb + '1', '1'>))
+            >, ~key)),
+    Counter($A, ctr_msb + '1', '1') ]
+
+rule SendPDU_2_encrypted:
+  [ Counter($A, ctr_msb, ctr_lsb), Fr(~data), Fr(~key) ]
+  --[
+    LessThan(ctr_msb, '1' + '1' + '1' + '1'),
+    LessThan(ctr_lsb, '1' + '1' + '1

@@ -1,0 +1,55 @@
+free c : channel.
+
+type pkey.
+type skey.
+
+free skA: skey [private].
+free skB: skey [private].
+
+fun pk(skey): pkey.
+fun encrypt(bitstring, pkey): bitstring.
+reduc forall x: bitstring, y: skey; decrypt(encrypt(x,pk(y)),y) = x.
+
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
+
+event begin_B(pkey, pkey, bitstring).
+event end_A(pkey, pkey, bitstring).
+event reached().
+
+query secret na.
+query pkA: pkey, pkB: pkey, na: bitstring; event(end_A(pkB, pkA, na)) ==> event(begin_B(pkA, pkB, na)).
+query event(reached()). 
+
+
+
+let B(skB: skey, pkA: pkey)= 
+    new na: bitstring;
+    event begin_B(pk(skB), pkA, na);
+    let msg = encrypt(na, pkA) in
+    let signed_msg = sign(msg, skB) in
+    
+    out(c, signed_msg);
+    in(c, x: bitstring);
+    let x: bitstring = checksign(x, pkA) in
+    let (=na, nb: bitstring) = decrypt(x, skB) in
+    event reached();
+    0.
+
+let A(skA: skey, pkB: pkey) =
+    in(c, x: bitstring);
+    
+    let encrypted_msg = checksign(x, pkB) in
+    let na = decrypt(encrypted_msg, skA) in
+
+    new nb: bitstring;
+    let msg = encrypt((na,nb), pkB) in
+    let signed_msg = sign(msg, skA) in
+    out(c, signed_msg);
+    (* event reached(); *)
+    event end_A(pk(skA), pkB, na).
+
+process
+    let pkA = pk(skA) in
+    let pkB = pk(skB) in
+    (!A(skA, pkB) | !B(skB, pkA) | out(c, (pkA, pkB)))

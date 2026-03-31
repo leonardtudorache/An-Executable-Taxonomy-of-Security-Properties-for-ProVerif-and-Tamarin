@@ -1,0 +1,52 @@
+(* Based on this https://link.springer.com/chapter/10.1007/978-3-642-36830-1_13 *)
+
+
+(* Types and channels *)
+type price.
+type identity.
+type nonce.
+type key.
+
+free c: channel.
+
+(* Events for tracking bids and wins *)
+event bid(price, identity).
+event won(price, identity).
+
+(* Query to verify non-repudiation property *)
+query p:price, id:identity; 
+    event(won(p,id)) ==> event(bid(p,id)).
+
+(* Cryptographic primitives *)
+fun pk(key): key.
+fun sign(bitstring, key): bitstring.
+fun hash(bitstring): bitstring.
+
+reduc forall m: bitstring, k: key; 
+    verify(sign(m,k), m, pk(k)) = true.
+
+free bidder_price: price [private].
+free bidder_id: identity [private].
+
+let bidder(sk_bidder: key) =
+    new n: nonce;
+    let bid_msg = (bidder_price, bidder_id, n) in
+    let signature = sign(hash((bidder_price, bidder_id, n)), sk_bidder) in
+    event bid(bidder_price, bidder_id);
+    out(c, (bid_msg, signature));
+    in(c, win_confirm: bitstring).
+   
+
+let auctioneer(pk_bidder: key) =
+    in(c, (bid_msg: bitstring, signature: bitstring));
+    let (p: price, id: identity, n: nonce) = bid_msg in
+    
+    if verify(signature, hash((p, id, n)), pk_bidder) = true then
+        new win_confirm: bitstring;
+        event won(bidder_price, bidder_id);
+        out(c, win_confirm).
+
+process
+    new sk_bidder: key;
+    let pk_bidder = pk(sk_bidder) in 
+    ((!bidder(sk_bidder)) | (!auctioneer(pk_bidder)))

@@ -1,0 +1,80 @@
+Protocol approved script in Tamarin.
+
+begin
+
+builtins: hashing, symmetric-encryption
+
+functions: h1/1
+
+rule Setup:
+  [Fr(~IDECU), Fr(~IDUser), Fr(~k)]
+  --[Setup()]->
+  [ECU_init($ECU, ~IDUser, ~IDECU, ~k), User_init($User, ~IDECU, ~IDUser, ~k)]
+
+rule ECU1:
+  [Fr(~Ni), ECU_init($ECU, IDUser, IDECU, k)]
+  --[Send_1($ECU, ~Ni), SecretKey(k)]->
+  [ECU_1($ECU, IDUser, IDECU, k, ~Ni), Out(~Ni)]
+
+rule User1:
+  let M1 = h1(Ni, k) in
+  [In(IDECU1), In(Ni), User_init($User, IDECU, IDUser, k)]
+  --[Eq(IDECU1, IDECU), Recv_1($ECU, Ni), Send_2($User, M1), SecretKey(k)]->
+  [User_1($User, IDECU, IDUser, k, M1, Ni), Out(M1)]
+
+rule ECU2:
+  let M11 = h1(Ni, k) in
+  [Fr(~ACK), ECU_1($ECU, IDUser, IDECU, k, Ni), In(IDUser1), In(M1)]
+  --[Recv_2($User, M1), Eq(IDUser, IDUser1), Send_ACK($ECU, ~ACK), Eq(M1, M11)]->
+  [Out(~ACK), ECU_2($ECU, IDUser, IDECU, k, Ni, M11)]
+
+rule User2:
+  let Nii = h1(Ni)
+      Mx = h1(Nii, k) in
+  [User_1($User, IDECU, IDUser, k, M1, Ni), In(ACK), In(IDECU1)]
+  --[Send_3($User, Mx), Recv_ACK($ECU, ACK), Eq(IDECU1, IDECU)]->
+  [Out(Mx), User_2($User, IDECU, IDUser, k, M1, Mx, Nii)]
+
+rule ECU3:
+  let Nii1 = h1(Ni)
+      Mx1 = h1(Nii1, k) in
+  [ECU_2($ECU, IDUser, IDECU, k, Ni, M11), In(Mx), In(IDUser1)]
+  --[Recv_3($User, Mx), Eq(IDUser1, IDUser), Eq(Mx, Mx1)]->
+  []
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @i ==> x = y"
+
+restriction OneSetup:
+  "All #i #j. Setup() @i & Setup() @j ==> #i = #j"
+
+lemma Secrecy_Key:
+  "All n #i. SecretKey(n) @i ==> (not(Ex #j. K(n) @j))"
+
+// lemma ExecutableNi:
+//   exists-trace
+//   "Ex ECU m #i #j. Send_1(ECU,m)@i & Recv_1(ECU,m)@j"
+
+// lemma ExecutableM1:
+//   exists-trace
+//   "Ex User m #i #j. Recv_2(User,m)@i & Send_2(User,m)@j"
+
+// lemma ExecutableACK:
+//   exists-trace
+//   "Ex ECU m #i #j. Send_ACK(ECU,m)@i & Recv_ACK(ECU,m)@j"
+
+// lemma ExecutableMx:
+//   exists-trace
+//   "Ex User m #i #j. Recv_3(User,m)@i & Send_3(User,m)@j"
+
+lemma Injectiveagreement_ECU:
+  "(All ECU m #i . Recv_ACK(ECU, m) @#i ==> 
+    (Ex #j . Send_ACK(ECU, m)@#j & #j < #i) & 
+    (not (Ex #j . Recv_ACK(ECU, m) @ #j & not (#i = #j))))"
+
+lemma Injectiveagreement_User:
+  "(All User m #i . Recv_2(User,m)@ #i ==> 
+    (Ex #j . Send_2(User,m) @ #j & #j < #i) & 
+    (not (Ex #j . Recv_2(User,m) @ #j & not (#i = #j))))"
+
+end

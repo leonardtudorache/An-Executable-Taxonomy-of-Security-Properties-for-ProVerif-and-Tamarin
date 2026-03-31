@@ -1,0 +1,44 @@
+theory NonEquivocation_Fixed
+begin
+
+builtins: signing
+
+rule Register_PK:
+  [ Fr(~skA) ]
+  -->
+  [ !Ltk($A, ~skA), !Pk($A, pk(~skA)), Out(pk(~skA)) ]
+
+
+rule Signer_First_Commit:
+    [ In(<tag, m>), !Ltk($A, skA) ]
+  --[ Committed($A, tag, m)
+    , Inserted($A, tag) 
+    ]->
+    [ Commit($A, tag, m)
+    , Out(<tag, m, sign(m, skA)>) 
+    ]
+
+rule Signer_Equivocation_Attempt:
+    [ In(<tag, m_new>), Commit($A, tag, m_old) ]
+  --[ Restriction_Inequality(m_new, m_old)
+    , Bad_Equivocation() 
+    ]->
+    [ Commit($A, tag, m_old) ] // Keep state
+
+// Used for storage table
+restriction Unique_Insertion:
+  "All a tag #i #j. Inserted(a, tag) @ i & Inserted(a, tag) @ j ==> #i = #j"
+
+restriction Inequality:
+    "All x y #i. Restriction_Inequality(x,y) @ i ==> not (x = y)"
+
+lemma non_equivocation:
+  "All a tag m1 m2 #i #j. 
+    (Committed(a, tag, m1) @ i & Committed(a, tag, m2) @ j) 
+    ==> (m1 = m2)"
+
+lemma bad_equivocation_reachable:
+  exists-trace
+  "Ex #i. Bad_Equivocation() @ i"
+
+end

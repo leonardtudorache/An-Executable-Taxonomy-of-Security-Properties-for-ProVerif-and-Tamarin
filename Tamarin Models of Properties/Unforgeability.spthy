@@ -1,0 +1,48 @@
+theory SimpleSignature
+begin
+
+builtins: signing
+
+/* 1. Setup: Generate keys and publish the public key */
+rule Setup:
+    [ Fr(~skA) ]
+  --[ OnlyOnce() ]->
+    [ !LtkA(~skA), !PkA(pk(~skA)), Out(pk(~skA)) ]
+
+/* 2. Process A: Sign a fresh message */
+rule ProcessA:
+    [ !LtkA(~skA), Fr(~m1) ]
+  --[ SignedBy(~skA, ~m1) ]->
+    [ Out(<~m1, sign(~m1, ~skA)>) ]
+
+/* 3. Process B: Receive message and signature, then verify */
+rule ProcessB:
+    [ In(<m, sig>)  
+    , !PkA(pkA) 
+    ]
+  --[ Eq(verify(sig, m, pkA), true)
+    , ValidSignature(m, pkA)
+    , Check()
+    ]->
+    [ ]
+
+/* --- Restrictions --- */
+
+restriction Equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+restriction OnlyOnce:
+    "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
+
+/* --- Lemmas --- */
+
+lemma Unforgeability:
+    all-traces
+    "All m pkA #i. ValidSignature(m, pkA) @ i ==> 
+        (Ex sk #j. SignedBy(sk, m) @ j & pk(sk) = pkA)"
+
+lemma Executability:
+    exists-trace
+    "Ex #i. Check() @ i"
+
+end

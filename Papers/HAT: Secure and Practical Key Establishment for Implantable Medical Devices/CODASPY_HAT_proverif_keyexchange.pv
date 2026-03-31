@@ -1,0 +1,210 @@
+set expandIfTermsToTerms = true.
+set traceBacktracking = false.
+set reconstructTrace = false.
+set attacker = active.
+type principal.
+type stage.
+const principal_Imd:principal.
+const principal_Externaldevices:principal.
+const phase_0:stage.
+const empty:bitstring [data].
+table valuestore(principal, principal, bitstring, bitstring).
+const const_g:bitstring.
+const const_nil:bitstring.
+const const_k:bitstring [private].
+const const_s:bitstring [private].
+const const_pepper:bitstring [private].
+const const_public_imd:bitstring [private].
+const const_salt:bitstring.
+const const_hash1:bitstring [private].
+const const_hash2:bitstring [private].
+const const_hash3:bitstring [private].
+const const_hash4:bitstring [private].
+const const_hash5:bitstring [private].
+const const__hash1:bitstring [private].
+const const__hash2:bitstring [private].
+const const__hash3:bitstring [private].
+const const__hash4:bitstring [private].
+const const__hash5:bitstring [private].
+const const_priv_key:bitstring [private].
+const const_public_ext:bitstring [private].
+const const_sk_1:bitstring [private].
+const const_sk_2:bitstring [private].
+const const_nonce:bitstring [private].
+const const__mac:bitstring [private].
+const const_unnamed_0:bitstring [private].
+const const__sk_1:bitstring [private].
+const const__sk_2:bitstring [private].
+const const_e2:bitstring [private].
+const const_unnamed_1:bitstring [private].
+
+letfun ASSERT(a:bitstring, b:bitstring) = a = b.
+fun CONCAT2(bitstring, bitstring):bitstring [data].
+fun CONCAT3(bitstring, bitstring, bitstring):bitstring [data].
+fun CONCAT4(bitstring, bitstring, bitstring, bitstring):bitstring [data].
+fun CONCAT5(bitstring, bitstring, bitstring, bitstring, bitstring):bitstring [data].
+fun SPLIT(bitstring):bitstring reduc forall a:bitstring, b:bitstring;
+        SPLIT(CONCAT2(a, b)) = (a, b)
+otherwise forall a:bitstring, b:bitstring, c:bitstring;
+        SPLIT(CONCAT3(a, b, c)) = (a, b, c)
+        otherwise forall a:bitstring, b:bitstring, c:bitstring, d:bitstring;
+        SPLIT(CONCAT4(a, b, c, d)) = (a, b, c, d)
+        otherwise forall a:bitstring, b:bitstring, c:bitstring, d:bitstring, e:bitstring;
+        SPLIT(CONCAT5(a, b, c, d, e)) = (a, b, c, d, e).
+fun exp(bitstring, bitstring):bitstring.
+equation forall a:bitstring, b:bitstring;
+        exp(b, exp(a, const_g)) = exp(a, exp(b, const_g)).
+fun HASH1(bitstring):bitstring.
+fun HASH2(bitstring, bitstring):bitstring.
+fun HASH3(bitstring, bitstring, bitstring):bitstring.
+fun HASH4(bitstring, bitstring, bitstring, bitstring):bitstring.
+fun HASH5(bitstring, bitstring, bitstring, bitstring, bitstring):bitstring.
+fun MAC(bitstring, bitstring): bitstring.
+fun hmac_hash1(bitstring, bitstring, bitstring):bitstring.
+fun hmac_hash2(bitstring, bitstring, bitstring):bitstring.
+fun hmac_hash3(bitstring, bitstring, bitstring):bitstring.
+letfun HKDF(salt:bitstring, ikm:bitstring, info:bitstring) =
+        let output1 = hmac_hash1(salt, ikm, info) in
+        let output2 = hmac_hash2(salt, ikm, info) in
+        let output3 = hmac_hash3(salt, ikm, info) in
+        (output1, output2, output3).
+fun ENC(bitstring, bitstring):bitstring.
+fun DEC(bitstring, bitstring):bitstring reduc
+        forall k:bitstring, m:bitstring;
+        DEC(k, ENC(k, m)) = m
+        otherwise forall k:bitstring, m:bitstring;
+        DEC(k, m) = empty.
+
+const pub:channel.
+const chan_Imd_to_Externaldevices:channel.
+const chan_Imd_to_Externaldevices_private:channel [private].
+const chan_Externaldevices_to_Imd:channel.
+const chan_Externaldevices_to_Imd_private:channel [private].
+event SendMsg(principal, principal, stage, bitstring).
+event RecvMsg(principal, principal, stage, bitstring).
+
+query attacker(const_s).
+query attacker(HKDF(, const_salt, const_nil)).
+query attacker(HKDF(, const_salt, const_nil)).
+query attacker(HKDF(, const_salt, const_nil)).
+query attacker(HKDF(, const_salt, const_nil)).
+query attacker(const_pepper).
+query attacker(HASH1(HASH1(HASH1(HASH1(HASH1(CONCAT2(const_s, const_pepper))))))).
+query attacker(HASH1(HASH1(HASH1(HASH1(HASH1(CONCAT2(const_s, const_pepper))))))).
+
+query event(RecvMsg(principal_Externaldevices, principal_Imd, phase_0, const_public_ext)) ==> event(SendMsg(principal_Externaldevices, principal_Imd, phase_0, const_public_ext)).
+query event(RecvMsg(principal_Externaldevices, principal_Imd, phase_0, const__mac)) ==> event(SendMsg(principal_Externaldevices, principal_Imd, phase_0, const__mac)).
+query event(RecvMsg(principal_Externaldevices, principal_Imd, phase_0, const_nonce)) ==> event(SendMsg(principal_Externaldevices, principal_Imd, phase_0, const_nonce)).
+query event(RecvMsg(principal_Imd, principal_Externaldevices, phase_0, const_e2)) ==> event(SendMsg(principal_Imd, principal_Externaldevices, phase_0, const_e2)).
+
+let Imd_0() =
+        let (Imd_public_imd:bitstring) = exp(const_k, const_g) in
+        insert valuestore(principal_Imd, principal_Imd, const_public_imd, Imd_public_imd);
+        let (Imd_hash1:bitstring) = HASH1(CONCAT2(const_s, const_pepper)) in
+        insert valuestore(principal_Imd, principal_Imd, const_hash1, Imd_hash1);
+        get valuestore(=principal_Imd, =principal_Imd, =const_hash1, Imd_hash1) in
+        let (Imd_hash2:bitstring) = HASH1(Imd_hash1) in
+        insert valuestore(principal_Imd, principal_Imd, const_hash2, Imd_hash2);
+        get valuestore(=principal_Imd, =principal_Imd, =const_hash2, Imd_hash2) in
+        let (Imd_hash3:bitstring) = HASH1(Imd_hash2) in
+        insert valuestore(principal_Imd, principal_Imd, const_hash3, Imd_hash3);
+        get valuestore(=principal_Imd, =principal_Imd, =const_hash3, Imd_hash3) in
+        let (Imd_hash4:bitstring) = HASH1(Imd_hash3) in
+        insert valuestore(principal_Imd, principal_Imd, const_hash4, Imd_hash4);
+        get valuestore(=principal_Imd, =principal_Imd, =const_hash4, Imd_hash4) in
+        let (Imd_hash5:bitstring) = HASH1(Imd_hash4) in
+        insert valuestore(principal_Imd, principal_Imd, const_hash5, Imd_hash5);
+        0.
+let Imd_to_Externaldevices_1() =
+        get valuestore(=principal_Imd, =principal_Imd, =const_public_imd, Imd_public_imd) in
+        event SendMsg(principal_Imd, principal_Externaldevices, phase_0, const_public_imd);
+        out(pub, Imd_public_imd);
+        out(chan_Imd_to_Externaldevices_private, (Imd_public_imd));
+        0.
+let Externaldevices_from_Imd_2() =
+        in(chan_Imd_to_Externaldevices_private, (Imd_public_imd:bitstring));
+        event RecvMsg(principal_Imd, principal_Externaldevices, phase_0, const_public_imd);
+        insert valuestore(principal_Imd, principal_Externaldevices, const_public_imd, Imd_public_imd);
+        0.
+let Externaldevices_3() =
+        let (Externaldevices__hash1:bitstring) = HASH1(CONCAT2(const_s, const_pepper)) in
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const__hash1, Externaldevices__hash1);
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const__hash1, Externaldevices__hash1) in
+        let (Externaldevices__hash2:bitstring) = HASH1(Externaldevices__hash1) in
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const__hash2, Externaldevices__hash2);
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const__hash2, Externaldevices__hash2) in
+        let (Externaldevices__hash3:bitstring) = HASH1(Externaldevices__hash2) in
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const__hash3, Externaldevices__hash3);
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const__hash3, Externaldevices__hash3) in
+        let (Externaldevices__hash4:bitstring) = HASH1(Externaldevices__hash3) in
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const__hash4, Externaldevices__hash4);
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const__hash4, Externaldevices__hash4) in
+        let (Externaldevices__hash5:bitstring) = HASH1(Externaldevices__hash4) in
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const__hash5, Externaldevices__hash5);
+        let (Externaldevices_public_ext:bitstring) = exp(const_priv_key, const_g) in
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const_public_ext, Externaldevices_public_ext);
+        get valuestore(=principal_Imd, =principal_Externaldevices, =const_public_imd, Imd_public_imd) in
+        let (Externaldevices_sk_1:bitstring, Externaldevices_sk_2:bitstring) = HKDF(exp(const_priv_key, Imd_public_imd), const_salt, const_nil) in
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const_sk_1, Externaldevices_sk_1);
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const_sk_2, Externaldevices_sk_2);
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const__hash5, Externaldevices__hash5) in
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const_public_ext, Externaldevices_public_ext) in
+        let (Externaldevices__mac:bitstring) = MAC(Externaldevices__hash5, Externaldevices_public_ext) in
+        insert valuestore(principal_Externaldevices, principal_Externaldevices, const__mac, Externaldevices__mac);
+        0.
+let Externaldevices_to_Imd_4() =
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const_public_ext, Externaldevices_public_ext) in
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const__mac, Externaldevices__mac) in
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const_nonce, const_nonce) in
+        event SendMsg(principal_Externaldevices, principal_Imd, phase_0, const_public_ext);
+        event SendMsg(principal_Externaldevices, principal_Imd, phase_0, const__mac);
+        event SendMsg(principal_Externaldevices, principal_Imd, phase_0, const_nonce);
+        out(chan_Externaldevices_to_Imd, (Externaldevices_public_ext));
+        out(chan_Externaldevices_to_Imd, (Externaldevices__mac));
+        out(chan_Externaldevices_to_Imd, (const_nonce));
+        0.
+let Imd_from_Externaldevices_5() =
+        in(chan_Externaldevices_to_Imd, (Externaldevices_public_ext:bitstring));
+        in(chan_Externaldevices_to_Imd, (Externaldevices__mac:bitstring));
+        in(chan_Externaldevices_to_Imd, (const_nonce:bitstring));
+        event RecvMsg(principal_Externaldevices, principal_Imd, phase_0, const_public_ext);
+        insert valuestore(principal_Externaldevices, principal_Imd, const_public_ext, Externaldevices_public_ext);
+        event RecvMsg(principal_Externaldevices, principal_Imd, phase_0, const__mac);
+        insert valuestore(principal_Externaldevices, principal_Imd, const__mac, Externaldevices__mac);
+        event RecvMsg(principal_Externaldevices, principal_Imd, phase_0, const_nonce);
+        insert valuestore(principal_Externaldevices, principal_Imd, const_nonce, const_nonce);
+        0.
+let Imd_6() =
+        get valuestore(=principal_Externaldevices, =principal_Imd, =const__mac, Externaldevices__mac) in
+        get valuestore(=principal_Imd, =principal_Imd, =const_hash5, Imd_hash5) in
+        get valuestore(=principal_Externaldevices, =principal_Imd, =const_public_ext, Externaldevices_public_ext) in
+        if ASSERT(Externaldevices__mac, MAC(Imd_hash5, Externaldevices_public_ext)) = true then
+        let (Imd_unnamed_0:bool) = ASSERT(Externaldevices__mac, MAC(Imd_hash5, Externaldevices_public_ext)) in
+        get valuestore(=principal_Externaldevices, =principal_Imd, =const_public_ext, Externaldevices_public_ext) in
+        let (Imd__sk_1:bitstring, Imd__sk_2:bitstring) = HKDF(exp(const_k, Externaldevices_public_ext), const_salt, const_nil) in
+        insert valuestore(principal_Imd, principal_Imd, const__sk_1, Imd__sk_1);
+        insert valuestore(principal_Imd, principal_Imd, const__sk_2, Imd__sk_2);
+        get valuestore(=principal_Imd, =principal_Imd, =const__sk_1, Imd__sk_1) in
+        get valuestore(=principal_Externaldevices, =principal_Imd, =const_nonce, Externaldevices_nonce) in
+        let (Imd_e2:bitstring) = ENC(Imd__sk_1, Externaldevices_nonce) in
+        insert valuestore(principal_Imd, principal_Imd, const_e2, Imd_e2);
+        0.
+let Imd_to_Externaldevices_7() =
+        get valuestore(=principal_Imd, =principal_Imd, =const_e2, Imd_e2) in
+        event SendMsg(principal_Imd, principal_Externaldevices, phase_0, const_e2);
+        out(chan_Imd_to_Externaldevices, (Imd_e2));
+        0.
+let Externaldevices_from_Imd_8() =
+        in(chan_Imd_to_Externaldevices, (Imd_e2:bitstring));
+        event RecvMsg(principal_Imd, principal_Externaldevices, phase_0, const_e2);
+        insert valuestore(principal_Imd, principal_Externaldevices, const_e2, Imd_e2);
+        0.
+let Externaldevices_9() =
+        get valuestore(=principal_Externaldevices, =principal_Externaldevices, =const_sk_1, Externaldevices_sk_1) in
+        get valuestore(=principal_Imd, =principal_Externaldevices, =const_e2, Imd_e2) in
+        if ASSERT(const_nonce, DEC(Externaldevices_sk_1, Imd_e2)) = true then
+        let (Externaldevices_unnamed_1:bool) = ASSERT(const_nonce, DEC(Externaldevices_sk_1, Imd_e2)) in
+        0.
+process (
+        (Imd_0() | Imd_to_Externaldevices_1() | Externaldevices_from_Imd_2() | Externaldevices_3() | Externaldevices_to_Imd_4() | Imd_from_Externaldevices_5() | Imd_6() | Imd_to_Externaldevices_7() | Externaldevices_from_Imd_8() | Externaldevices_9())
+)

@@ -1,0 +1,84 @@
+(*—-channels—-*) 
+free privateChannel1:channel [private]. 
+free publicChannel1:channel. 
+free publicChannel2:channel. 
+(*—-constants—-*) 
+free IDU:bitstring [private]. 
+free IDSP:bitstring [private]. 
+free ADDAC:bitstring. 
+(*—-shared key—-*) 
+free G:bitstring [private]. 
+free SK:bitstring [private]. 
+(*—-functions—-*) 
+fun concat(bitstring, bitstring):bitstring. 
+fun h(bitstring):bitstring. 
+fun mult(bitstring, bitstring):bitstring. 
+fun sign(bitstring, bitstring):bitstring. 
+fun verify(bitstring, bitstring):bitstring. 
+(*—-events—-*) 
+event startUi(bitstring). 
+event endUi(bitstring). 
+event startSP(bitstring). 
+event endSP(bitstring). 
+event startAC(bitstring). 
+event endAC(bitstring).
+
+(*—-queries—-*) 
+query idu:bitstring; inj-event(endUi(idu)) ==> inj-event(startUi(idu)). 
+query idsp:bitstring; inj-event(endSP(idsp)) ==> inj-event(startSP(idsp)). 
+query addac:bitstring; inj-event(endAC(addac)) ==> inj-event(startAC(addac)). 
+query attacker(SK). 
+
+(*—-Ui process—-*) 
+let Ui = 
+    out(privateChannel1,(IDU)); 
+    in(privateChannel1, (XSKu:bitstring, ADDIdP:bitstring));
+     let TIDU=IDU in event startUi(IDU); 
+     new tsU:bitstring; new rU:bitstring; 
+     let KU = mult(rU, G) in 
+     let TU = h(concat(KU, tsU)) in 
+     let VU = sign(XSKu, TU) in 
+     out(publicChannel1, (TIDU, ADDIdP, KU, VU, tsU)); 
+     in(publicChannel1, (TIDSP:bitstring, ADDIdP2:bitstring, KSP:bitstring, VSP:bitstring, tsSP:bitstring)); 
+     let TID=h(concat(TIDU, VU)) in 
+     let SK = mult(rU, KSP) in 
+     new Typeentity:bitstring; 
+     out(publicChannel2, (Typeentity, TIDSP, VSP, tsSP)); 
+     in(publicChannel2, (xIDSP:bitstring)); 
+     event endUi(IDU).
+
+(*—–SP process—-*) 
+let SP = 
+    out(privateChannel1,(IDSP)); 
+    in(privateChannel1, (XSKsp:bitstring, ADDIdP:bitstring)); 
+    let TIDSP=IDSP in event startSP(IDSP); 
+    in(publicChannel1, (TIDU:bitstring, ADDIdP2:bitstring, KU:bitstring, VU:bitstring, tsU:bitstring)); 
+    new Typeentity:bitstring; 
+    out(publicChannel2, (Typeentity, TIDU, VU, tsU)); 
+    in(publicChannel2, (xIDU:bitstring)); 
+    new tsSP:bitstring; 
+    new rSP:bitstring; 
+    let KSP = mult(rSP, G) in 
+    let TSP = h(concat(KSP, tsSP)) in 
+    let VSP = sign(XSKsp, TSP) in 
+    let SK = mult(rSP, KU) in 
+    out(publicChannel1, (TIDSP, ADDIdP2, KSP, VSP, tsSP)); 
+    event endUi(IDSP).
+
+(*—-AC process—-*) 
+let AC = 
+    in(privateChannel1,(XIDentity:bitstring)); 
+    new SKIdP:bitstring; 
+    new PKIdP:bitstring; 
+    new SKentity:bitstring; 
+    new PKentity:bitstring; 
+    new IDIdP:bitstring; 
+    let Certsign = sign(SKIdP, concat(concat(PKentity,XIDentity),IDIdP)) in 
+    event startAC(ADDAC); 
+    in(publicChannel2, (XPKentity:bitstring, Ventity:bitstring)); 
+    new true:bitstring; 
+    if (verify(XPKentity, Ventity)=true) then out(publicChannel2, true); 
+    event endAC(ADDAC).
+
+(*—-process—-*) 
+process ((!Ui)|(!SP)|(!AC))

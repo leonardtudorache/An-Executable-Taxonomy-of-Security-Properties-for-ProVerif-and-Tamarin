@@ -1,0 +1,30 @@
+(*
+ * MTProto 2.0: Creating an authorization key.
+ *
+ * Model for the protocol used to create long-term keys shared between a client
+ * and Telegram's server.
+ *
+ * See: https://core.telegram.org/mtproto/auth_key
+ *
+ * Expected time to run this script: ~2s
+ *
+ * NOTE: run this query against model3, which uses probabilistic encryption.
+ *)
+
+let Pb() =
+  get AuthProtClientEphemeralSecrets(nk: Nonce, b: Z) in
+  new n: Z;
+  out(io, choice[b, n]).
+(* ✔︎ Expected result: true *)
+
+process
+  let allowWeakDiffieHellman = true in
+  (0
+    | !RegisterRSAKey(Server)
+    | !ServerAuth(Server)
+    | !ClientAuth(Server, allowWeakDiffieHellman)
+    | !GenGoodDHParameters()
+    | !GenBadDHParameters()
+    | Pb()
+  )
+

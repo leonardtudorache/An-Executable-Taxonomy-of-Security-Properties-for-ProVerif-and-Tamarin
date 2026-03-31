@@ -1,0 +1,309 @@
+(* Channel Declaration *)
+free c: channel.
+free C_TDSServer: channel [private].
+free TDSServer_DS: channel [private].
+free DS_ACS: channel [private].
+free C_ACS: channel.
+
+(* Symmetric Encryption and Decryption *)
+type key.
+type nonce.
+fun ngen(key, nat) : nonce.
+fun senc(key, nonce, bitstring) : bitstring.
+fun sdec(key, nonce, bitstring) : bitstring.
+equation forall k:key, n:nonce, m:bitstring; sdec(k,n,senc(k,n,m)) = m.
+equation forall k:key, n:nonce, m:bitstring; senc(k,n,sdec(k,n,m)) = m.
+
+(* Message Authentication Code (MAC) *)
+fun mac(key,bitstring):bitstring.
+
+(* Authenticated Encryption with Associated Data (AEAD) *)
+letfun aeadenc(k:key, n:nonce, plaintext:bitstring) =
+    (senc(k,n,plaintext), mac(k,(n,senc(k,n,plaintext)))).
+letfun aeaddec(k:key, n:nonce, ciphertext:bitstring, tag:bitstring) =
+    let (=tag) =mac(k,(n,ciphertext)) in
+    let plaintext:bitstring = sdec(k,n,ciphertext) in
+    plaintext.
+
+(* Asymmetric Encryption and Decryption *)
+type skey.
+type pkey.
+fun pk(skey): pkey.
+fun aenc(bitstring,pkey): bitstring.
+reduc forall m: bitstring , k: skey ; adec(aenc(m, pk(k)) ,k) = m.
+
+(* ECC Public Key Functions for Key Agreement *)
+type eskey.
+type Gen.
+const G: Gen. (* For Key Agreement of SDK and ACS *)
+fun smult(eskey,Gen):Gen.
+equation forall a:eskey, b:eskey; smult(a,smult(b,G)) = smult(b,smult(a,G)).
+
+(* Digital Signature *)
+type sskey.
+type spkey.
+fun spk(sskey): spkey.
+fun sign(bitstring, sskey): bitstring.
+reduc forall m: bitstring, k: sskey; checksign(m, sign(m, k), spk(k)) = true.
+
+(* Digital Certificate *)
+fun gencert(spkey, sskey): bitstring.
+reduc forall a: spkey, b: sskey; checkcert(a, gencert(a,b), spk(b)) = true.
+
+(* Functions for Making Natural Numbers *)
+reduc forall x:nat; nat_init(x) = x.
+
+(* Type Converter *)
+fun GenToKey(Gen): key [typeConverter].
+
+(* Type Declaration *)
+type TransID. (* for each entitie's transaction ID *)
+
+(* message type *)
+const AReq: bitstring.
+const ARes: bitstring.
+const CReq: bitstring.
+const CRes: bitstring.
+const RReq: bitstring.
+const RRes: bitstring.
+
+(* Challenge Data (secret for attacker) *)
+free challengeDataEntry: bitstring[private].
+
+(* Events *)
+event send_challenge(TransID).
+event auth_challenge(TransID).
+
+(* Safety to be verified *)
+query attacker(challengeDataEntry).
+weaksecret challengeDataEntry.
+query i:TransID; event(auth_challenge(i))==>event(send_challenge(i)). 
+query i:TransID; inj-event(auth_challenge(i))==>inj-event(send_challenge(i)). 
+
+
+let Cardholder(deviceInfo:bitstring,sdkReferenceNumber:bitstring,p_ds:pkey,Pb_DSCA:spkey)=
+    (* Step 1-4 *)
+    (* Generate the SDK Transaction ID *)
+    new sdkTransID: TransID;
+    (* Encrypt the Device Information using the public key of the DS *)
+    let sdkEncData = aenc(deviceInfo,p_ds) in
+    (* Prepare the 3DS SDK to ACS secure channel *)
+    new dC: eskey;(* Secretkey for 3DS SDK *)
+    let QC = smult(dC,G) in (* QC : SDK Ephemeral Public Key *)
+    (* Additional Data *)
+    new AddData0: bitstring;
+    (* Send the necessary information to 3DS Server *)
+    out(C_TDSServer,(sdkEncData,sdkReferenceNumber,sdkTransID,QC,AddData0));
+
+    (* Step 10 *)
+    (* Receive the necessary information for CReq from 3DS Server *)
+    in(C_TDSServer,(acsSignedContent:bitstring,acsTransID:TransID,acsURL:bitstring,Cert_PbACS:bitstring,QT:Gen,threeDSServerTransID:TransID,Pb_ACS:spkey));
+
+    (* Step 11 *)
+    (* Complete the ACS to 3DS SDK secure channel *)
+    if checkcert(Pb_ACS,Cert_PbACS,Pb_DSCA) then
+    if checksign((acsURL,QT,QC),acsSignedContent,Pb_ACS) then
+    let CEK_SA = GenToKey(smult(dC,QT)) in
+    (* Prepare for CReq *)
+    let sdkCounterAtoS = nat_init(0) in
+    let sdkCounterStoA = nat_init(0) in
+    (* Additonal Data *)
+    new AddData11: bitstring;
+    (* Send the CReq to ACS *)
+    let cnt_CEK_SA = nat_init(0) in
+    let CReq_11 = aeadenc(CEK_SA,ngen(CEK_SA,cnt_CEK_SA),(CReq,acsTransID,sdkCounterStoA,sdkTransID,threeDSServerTransID,AddData11)) in
+    let sdkCounterStoA = sdkCounterStoA + 1 in
+    if sdkCounterStoA <> 0 then
+    out(C_ACS,CReq_11);
+
+    (* Step 14 *)
+    (* Receive the CRes from the ACS *)
+    in(C_ACS,(ciphertext_14:bitstring,tag_14:bitstring));
+    let cnt_CEK_SA = cnt_CEK_SA + 1 in
+    let (=CRes,acsCounterAtoS:nat,=acsTransID,=sdkTransID,=threeDSServerTransID,AddData13:bitstring) = aeaddec(CEK_SA,ngen(CEK_SA,cnt_CEK_SA),ciphertext_14,tag_14) in
+    if sdkCounterAtoS = acsCounterAtoS then
+    let sdkCounterAtoS = sdkCounterAtoS + 1 in
+    if sdkCounterAtoS <> 0 then
+
+    (* Step 15-16  *)
+    (* Additional Data *)
+    new AddData15: bitstring;
+    (* Send the CReq with Challenge Data to the ACS *)
+    let cnt_CEK_SA = cnt_CEK_SA + 1 in
+    let CReq_16 = aeadenc(CEK_SA,ngen(CEK_SA,cnt_CEK_SA),(CReq,acsTransID,challengeDataEntry,sdkCounterStoA,sdkTransID,threeDSServerTransID,AddData15)) in
+    let sdkCounterStoA = sdkCounterStoA + 1 in
+    if sdkCounterStoA <> 0 then
+    event send_challenge(acsTransID);
+    out(C_ACS,CReq_16);
+
+    (* Step 24-25 *)
+    (* Receive the Final CRes from the ACS *)
+    in(C_ACS,(ciphertext_24:bitstring,tag_24:bitstring));
+    let cnt_CEK_SA = cnt_CEK_SA + 1 in
+    let (=CRes,tranStatus:bool,acsCounterAtoS:nat,=acsTransID,=sdkTransID,=threeDSServerTransID,AddData23:bitstring) = aeaddec(CEK_SA,ngen(CEK_SA,cnt_CEK_SA),ciphertext_24,tag_24) in
+    if sdkCounterAtoS = acsCounterAtoS then
+    let sdkCounterAtoS = sdkCounterAtoS + 1 in
+    if sdkCounterAtoS <> 0 then
+    if tranStatus then
+    0.
+
+let TDSServer(threeDSServerRefNumber:bitstring)=
+    (* Step 5 *)
+    (* Receive the necessary information for AReq from Cardholder *)
+    in(C_TDSServer,(sdkEncData:bitstring,sdkReferenceNumber:bitstring,sdkTransID:TransID,QC:Gen,AddData_SDK:bitstring));
+    (* Generate the 3DS Server Transaction ID *)
+    new threeDSServerTransID: TransID;
+    (* Additional Data *)
+    new AddData: bitstring;
+    let AddData5 = (AddData_SDK,AddData) in
+    (* Send AReq to DS*)
+    out(TDSServer_DS,(AReq,sdkEncData,sdkReferenceNumber,sdkTransID,threeDSServerRefNumber,threeDSServerTransID,QC,AddData5));
+
+    (* Step 9 *)
+    (* Receive ARes from DS *)
+    in(TDSServer_DS,(=ARes,acsReferenceNumber:bitstring,acsSignedContent:bitstring,acsTransID:TransID,acsURL:bitstring,Cert_PbACS:bitstring,dsReferenceNumber:bitstring,dsTransID:TransID,=sdkTransID,=threeDSServerTransID,QT:Gen,Pb_ACS:spkey,AddData7:bitstring));
+    (* Send the necessary information to Cardholder(SDK) *)
+    out(C_TDSServer,(acsSignedContent,acsTransID,acsURL,Cert_PbACS,QT,threeDSServerTransID,Pb_ACS));
+
+    (* Step 20 *)
+    (* Receive the RReq from the DS *)
+    in(TDSServer_DS,(=RReq,tranStatus:bool,=acsTransID,=dsTransID,interactionCounter:nat,=sdkTransID,=threeDSServerTransID,AddData18:bitstring));
+    (* Additional Data *)
+    new AddData20: bitstring;
+    (* Format and Send the RRes message to the DS *)
+    out(TDSServer_DS,(RRes,acsTransID,dsTransID,sdkTransID,threeDSServerTransID,AddData20)).
+
+
+let DS(dsReferenceNumber:bitstring,s_ds:skey)=
+    (* Step 6 *)
+    (* Receive AReq from 3DS Server *)
+    in(TDSServer_DS,(=AReq,sdkEncData:bitstring,sdkReferenceNumber:bitstring,sdkTransID:TransID,threeDSServerRefNumber:bitstring,threeDSServerTransID:TransID,QC:Gen,AddData5:bitstring));
+    (* Generate the DS Transaction ID *)
+    new dsTransID: TransID;
+    (* Decrypt the SDK Encrypted Data *)
+    let deviceInfo = adec(sdkEncData,s_ds) in
+    (* Additional Data *)
+    new AddData: bitstring;
+    let AddData6 = (AddData5,AddData) in
+    (* Send AReq to ACS *)
+    out(DS_ACS,(AReq,deviceInfo,dsReferenceNumber,dsTransID,sdkReferenceNumber,sdkTransID,threeDSServerRefNumber,threeDSServerTransID,QC,AddData6));
+
+    (* Step 8 *)
+    (* Receive ARes from ACS *)
+    in(DS_ACS,(=ARes,acsReferenceNumber:bitstring,acsSignedContent:bitstring,acsTransID:TransID,acsURL:bitstring,Cert_PbACS:bitstring,=dsReferenceNumber,=dsTransID,=sdkTransID,=threeDSServerTransID,QT:Gen,Pb_ACS:spkey,AddData7:bitstring));
+    (* Send ARes to 3DS Server *)
+    out(TDSServer_DS,(ARes,acsReferenceNumber,acsSignedContent,acsTransID,acsURL,Cert_PbACS,dsReferenceNumber,dsTransID,sdkTransID,threeDSServerTransID,QT,Pb_ACS,AddData7));
+
+    (* Step 19 *)
+    (* Receive RReq from the ACS *)
+    in(DS_ACS,(=RReq,tranStatus:bool,=acsTransID,=dsTransID,interactionCounter:nat,=sdkTransID,=threeDSServerTransID,AddData18:bitstring));
+    (* Send RReq to the 3DS Server *)
+    out(TDSServer_DS,(RReq,tranStatus,acsTransID,dsTransID,interactionCounter,sdkTransID,threeDSServerTransID,AddData18));
+
+    (* Step 21 *)
+    (* Receive RRes from the ACS *)
+    in(TDSServer_DS,(=RRes,=acsTransID,=dsTransID,=sdkTransID,=threeDSServerTransID,AddData20:bitstring));
+    (* Send the RRes to the ACS *)
+    out(DS_ACS,(RRes,acsTransID,dsTransID,sdkTransID,threeDSServerTransID,AddData20)).
+
+
+let ACS(acsReferenceNumber:bitstring,acsURL:bitstring,Pb_ACS:spkey,Pv_ACS:sskey,Cert_PbACS:bitstring)=
+    (* Step 7 *)
+    (* Receive AReq from DS *)
+    in(DS_ACS,(=AReq,deviceInfo:bitstring,dsReferenceNumber:bitstring,dsTransID:TransID,sdkReferenceNumber:bitstring,sdkTransID:TransID,threeDSServerRefNumber:bitstring,threeDSServerTransID:TransID,QC:Gen,AddData6:bitstring));
+    (* Generate the ACS Transaction ID *)
+    new acsTransID: TransID;
+    (* *************************** *)
+    (* Suppose that the ACS determines that additional certification is required. ( Transaction Status = 'C' ) *)
+    (* *************************** *)
+    (* Set up the ACS to 3DS SDK secure channel *)
+    new dT: eskey;
+    let QT = smult(dT,G) in
+    let acsSignedContent = sign((acsURL,QT,QC),Pv_ACS) in
+    (* Key Agreement with SDK *)
+    let CEK_AS = GenToKey(smult(dT,QC)) in
+    (* Zero the channel counters acsCounterAtoS and acsCounterStoA *)
+    let acsCounterAtoS = nat_init(0) in
+    let acsCounterStoA = nat_init(0) in
+    (* Additional Data *)
+    new AddData7: bitstring;
+    (* Send ARes to DS *)
+    out(DS_ACS,(ARes,acsReferenceNumber,acsSignedContent,acsTransID,acsURL,Cert_PbACS,dsReferenceNumber,dsTransID,sdkTransID,threeDSServerTransID,QT,Pb_ACS,AddData7));
+
+    (* Step 12 *)
+    (* Receive the CReq from SDK *)
+    in(C_ACS,(ciphertext_12:bitstring,tag_12:bitstring));
+    let cnt_CEK_AS = nat_init(0) in
+    let (=CReq,=acsTransID,sdkCounterStoA:nat,=sdkTransID,=threeDSServerTransID,AddData11:bitstring) = aeaddec(CEK_AS,ngen(CEK_AS,cnt_CEK_AS),ciphertext_12,tag_12) in
+    if sdkCounterStoA = acsCounterStoA then
+    let acsCounterStoA = acsCounterStoA + 1 in
+    if acsCounterStoA <> 0 then
+    (* Set the Interaction Counter to zero *)
+    let interactionCounter = nat_init(0) in
+
+    (* Step 13 *)
+    (* Additional Data *)
+    new AddData13:bitstring;
+    (* Format , Protect and Send the CRes message to Cardholder(SDK) *)
+    let cnt_CEK_AS = cnt_CEK_AS + 1 in
+    let CRes_13 = aeadenc(CEK_AS,ngen(CEK_AS,cnt_CEK_AS),(CRes,acsCounterAtoS,acsTransID,sdkTransID,threeDSServerTransID,AddData13)) in
+    let acsCounterAtoS = acsCounterAtoS + 1 in
+    if acsCounterAtoS <> 0 then
+    out(C_ACS,CRes_13);
+
+    (* Step 17 *)
+    (* Receive the CReq from SDK *)
+    in(C_ACS,(ciphertext_17:bitstring,tag_17:bitstring));
+    let cnt_CEK_AS = cnt_CEK_AS + 1 in
+    let (=CReq,=acsTransID,challengeDataEntry':bitstring,sdkCounterStoA:nat,=sdkTransID,=threeDSServerTransID,AddData15:bitstring) = aeaddec(CEK_AS,ngen(CEK_AS,cnt_CEK_AS),ciphertext_17,tag_17) in
+    if sdkCounterStoA = acsCounterStoA then
+    let acsCounterStoA = acsCounterStoA + 1 in
+    if acsCounterStoA <> 0 then
+    (* Verify the challenge data from SDK *)
+    if challengeDataEntry' = challengeDataEntry then
+    let interactionCounter = interactionCounter + 1 in
+    event auth_challenge(acsTransID);
+
+    (* Step 18 *)
+    (* Additional Data *)
+    new AddData18:bitstring;
+    (* Set the Transaction Status *)
+    let tranStatus = true in
+    (* Format and Send the RReq to the DS *)
+    out(DS_ACS,(RReq,tranStatus,acsTransID,dsTransID,interactionCounter,sdkTransID,threeDSServerTransID,AddData18));
+
+    (* Step 22-23 *)
+    (* Receive the RRes from the DS *)
+    in(DS_ACS,(=RRes,=acsTransID,=dsTransID,=sdkTransID,=threeDSServerTransID,AddData20:bitstring));
+    (* Additional Data *)
+    new AddData23: bitstring;
+    (* Format, Protect and Send the Final CRes *)
+    let cnt_CEK_AS = cnt_CEK_AS + 1 in
+    let CRes_23 = aeadenc(CEK_AS,ngen(CEK_AS,cnt_CEK_AS),(CRes,tranStatus,acsCounterAtoS,acsTransID,sdkTransID,threeDSServerTransID,AddData23)) in
+    let acsCounterAtoS = acsCounterAtoS + 1 in
+    if acsCounterAtoS <> 0 then
+    out(C_ACS,CRes_23).
+
+process
+(
+    (* for SDK *)
+    new deviceInfo: bitstring;
+    (* each entitie's reference number *)
+    new sdkReferenceNumber: bitstring;
+    new threeDSServerRefNumber: bitstring;
+    new dsReferenceNumber: bitstring;
+    new acsReferenceNumber: bitstring;
+    (* Key Pair of DS CA *)
+    new Pv_DSCA: sskey;
+    let Pb_DSCA = spk(Pv_DSCA) in out(c,Pb_DSCA);
+    (* Make a key pair of DS *)
+    new s_ds: skey;
+    let p_ds = pk(s_ds) in out(c,p_ds);
+    (* Step7: ACS (Secure Channel Set Up) *)
+    new Pv_ACS: sskey;
+    let Pb_ACS = spk(Pv_ACS) in out(c,Pb_ACS);
+    let Cert_PbACS = gencert(Pb_ACS,Pv_DSCA) in out(c,Cert_PbACS);
+    new acsURL: bitstring;
+    (* Parallel execution of processes *)
+    ((!Cardholder(deviceInfo,sdkReferenceNumber,p_ds,Pb_DSCA))|(!TDSServer(threeDSServerRefNumber))|(!DS(dsReferenceNumber,s_ds))|(!ACS(acsReferenceNumber,acsURL,Pb_ACS,Pv_ACS,Cert_PbACS)))
+)

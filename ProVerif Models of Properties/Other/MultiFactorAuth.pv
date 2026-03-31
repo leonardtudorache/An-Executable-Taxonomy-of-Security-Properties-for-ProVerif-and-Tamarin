@@ -1,0 +1,56 @@
+(* Multi-Factor Authentication ProVerif Model *)
+
+type user.
+type password.
+type token.
+type key.
+type message.   
+
+(* Cryptographic primitives *)
+fun hash(password): message.
+
+free secure_channel: channel [private].
+free public_channel: channel.
+
+(* Authentication events *)
+event UserAuthenticated(user).
+event FactorVerified(message).
+event Factor2Verified(token).
+
+(* Secrets and private channels *)
+free user_password: password [private].
+free user_token: token [private].
+
+query m: message, u: user, t: token; 
+    event(UserAuthenticated(u)) ==> (event(FactorVerified(m)) && event(Factor2Verified(t))).
+
+
+let AuthServer() =
+  (* Receive login attempt *)
+  in(public_channel, (username: user, pwd_attempt: message, token_attempt: token));
+  
+  (* Password verification *)
+  let hashed_pwd = hash(user_password) in
+  if pwd_attempt = hashed_pwd then
+    event FactorVerified(pwd_attempt);
+    (* Token verification *)
+    if token_attempt = user_token then
+        event Factor2Verified(token_attempt);
+        out(secure_channel, true);
+  0.
+
+(* User Process *)
+let User(u: user) =
+  new login_pwd: password;
+  new login_token: token;
+  
+  out(public_channel, (u, hash(login_pwd), login_token));
+  
+  in(secure_channel, result: bool);
+  if result = true then
+    event UserAuthenticated(u)
+  else 0.
+
+process
+  new u: user;
+  ((!AuthServer()) | (!User(u)))

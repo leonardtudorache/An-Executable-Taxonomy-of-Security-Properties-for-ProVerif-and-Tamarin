@@ -1,0 +1,48 @@
+theory AnonymityProtocol
+begin
+
+builtins: symmetric-encryption
+
+/* 1. Setup: Generate the shared key and private ID once */
+rule Setup:
+    [ Fr(~k)    // Generate fresh key k
+    , Fr(~p_id) // Generate private p_id
+    ]
+  --[ OnlyOnce() ]->
+    [ !SharedKey(~k)
+    , !PrivateID(~p_id)
+    , Out(~k)   // ProVerif model reveals 'k' in the process P
+    ]
+
+/* 2. Process P: Encrypts a fresh message with the ID */
+rule Process_P:
+    let 
+        m_enc = senc(<~m, ~p_id>, ~k)
+    in
+    [ !SharedKey(~k)
+    , !PrivateID(~p_id)
+    , Fr(~m)
+    ]
+  --[ SendP(~p_id) ]->
+    [ Out(m_enc) ]
+
+/* 3. Process Q: Receives and decrypts */
+rule Process_Q:
+    [ In(senc(<m, p_id>, ~k))
+    , !SharedKey(~k)
+    ]
+  -->
+    [ ]
+
+/* --- Security Properties --- */
+
+/* Corresponds to: query attacker(p_id) */
+lemma Secret_ID:
+    all-traces
+    "All p_id #i. SendP(p_id) @ i ==> not (Ex #j. K(p_id) @ j)"
+
+/* Restriction to ensure setup only runs once */
+restriction Singleton:
+    "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
+
+end

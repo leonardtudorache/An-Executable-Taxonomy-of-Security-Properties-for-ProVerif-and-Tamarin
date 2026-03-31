@@ -1,0 +1,2146 @@
+theory authorization_module begin
+
+// Function signature and definition of the equational theory E
+
+builtins: multiset
+functions: fst/1, mac/2, pair/2, sdec/2, senc/2, snd/1
+equations:
+    fst(<x.1, x.2>) = x.1,
+    sdec(senc(x.1, x.2), x.2) = x.1,
+    snd(<x.1, x.2>) = x.2
+
+
+
+rule (modulo E) Register_gw:
+   [ ]
+  --[ A_gw_registered( $gw_id ) ]->
+   [ !Gateway( $gw_id ), !Gw_req_counter( $gw_id, ('1'+'1') ) ]
+
+  /* has exactly the trivial AC variant */
+
+restriction gw_registered_once:
+  "∀ gw_id #i1 #i2.
+    ((A_gw_registered( gw_id ) @ #i1) ∧
+     (A_gw_registered( gw_id ) @ #i2)) ⇒
+    (#i1 = #i2)"
+  // safety formula
+
+rule (modulo E) Pairing:
+   [ Fr( key_us ), Fr( key_su ), !Gateway( $gw_id ) ]
+  --[
+  A_gw_paired( $gw_id, <key_us, key_su> ),
+  A_server_paired( $srv_id, $gw_id, <key_us, key_su> )
+  ]->
+   [
+   !Gw_key_established( $gw_id, <key_us, key_su> ),
+   !Srv_key_confirmed( $srv_id, $gw_id, <key_us, key_su> ),
+   Srv_counter( $srv_id, $gw_id, <key_us, key_su>, '1' )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Reveal_gw:
+   [ !Gw_key_established( gw_id, session_keys ) ]
+  --[ A_reveal( gw_id ) ]->
+   [ Out( <gw_id, session_keys> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Drop_key_gw:
+   [ !Gw_key_established( gw_id, session_keys ) ]
+  --[
+  Keys_not_dropped( gw_id, session_keys ),
+  A_gw_dropped_keys( gw_id, session_keys )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+restriction KeysNotDropped:
+  "∀ gw_id session_keys #i.
+    (Keys_not_dropped( gw_id, session_keys ) @ #i) ⇒
+    (¬(∃ #j.
+        (A_gw_dropped_keys( gw_id, session_keys ) @ #j) ∧ (#j < #i)))"
+  // safety formula
+
+restriction gw_only_one_active_key:
+  "∀ gw_id session_keys1 session_keys2 #i1 #i2.
+    (((A_gw_paired( gw_id, session_keys1 ) @ #i1) ∧
+      (A_gw_paired( gw_id, session_keys2 ) @ #i2)) ∧
+     (#i1 < #i2)) ⇒
+    (∃ #j.
+      (A_gw_dropped_keys( gw_id, session_keys1 ) @ #j) ∧ (#j < #i2))"
+
+rule (modulo E) Counter_reveal:
+   [ In( <$gw_id, count> ), !Gw_req_counter( $gw_id, count ) ]
+  --[ A_reveal_counter( $gw_id, count ) ]->
+   [ Out( <$gw_id, count> ) ]
+
+  /* has exactly the trivial AC variant */
+
+restriction counter_revealed_only_once:
+  "∀ gw_id count #i1 #i2.
+    ((A_reveal_counter( gw_id, count ) @ #i1) ∧
+     (A_reveal_counter( gw_id, count ) @ #i2)) ⇒
+    (#i1 = #i2)"
+  // safety formula
+
+rule (modulo E) Gw_reboot:
+   [ !Gw_req_counter( gw_id, count ) ]
+  --[ A_gw_rebooted( gw_id ), A_counter_used( gw_id, count ) ]->
+   [ !Gw_req_counter( gw_id, ('1'+count) ) ]
+
+  // loop breaker: [0]
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Increment_counter:
+   [ !Gw_req_counter( gw_id, count ) ]
+  --[ A_gw_counter_incremented( gw_id, count ) ]->
+   [ !Gw_req_counter( gw_id, ('1'+count) ) ]
+
+  // loop breaker: [0]
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Auth_0_Send_request:
+   [ ] --[ A_IssueRequest( $access_type ) ]-> [ Out( $access_type ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Auth_1_Gw_send_challenge:
+   [
+   !Gw_key_established( gw_id, <key_us, key_su> ), In( count ),
+   !Gw_req_counter( gw_id, count ), In( access_type ), Fr( thread_id )
+   ]
+  --[
+  Keys_not_dropped( gw_id, <key_us, key_su> ),
+  A_Gw_issue_challenge( gw_id, thread_id, access_type ),
+  T_challenge_start( gw_id, thread_id, <count, access_type> ),
+  A_counter_used( gw_id, count )
+  ]->
+   [
+   St_gw_pending( gw_id, <key_us, key_su>, thread_id, access_type,
+                  <count, access_type>
+   ),
+   Out( <'auth_chal', <count, access_type>, 
+         mac(<count, access_type>, key_us)>
+   )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+restriction counter_goes_up:
+  "∀ gw_id count1 count2 #i1 #i2.
+    (((A_counter_used( gw_id, count1 ) @ #i1) ∧
+      (A_counter_used( gw_id, count2 ) @ #i2)) ∧
+     (#i1 < #i2)) ⇒
+    (∃ z. count2 = (count1+z))"
+
+lemma gw_counter_never_the_same [use_induction]:
+  all-traces
+  "∀ gw_id count #i1 #i2.
+    ((A_counter_used( gw_id, count ) @ #i1) ∧
+     (A_counter_used( gw_id, count ) @ #i2)) ⇒
+    (#i1 = #i2)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ gw_id count #i1 #i2.
+  (A_counter_used( gw_id, count ) @ #i1) ∧
+  (A_counter_used( gw_id, count ) @ #i2)
+ ∧
+  ¬(#i1 = #i2)"
+*/
+induction
+  case empty_trace
+  by contradiction /* from formulas */
+next
+  case non_empty_trace
+  simplify
+  by solve( (#i1 < #i2)  ∥ (#i2 < #i1) )
+qed
+
+rule (modulo E) Auth_2_Srv_send_response:
+   [
+   !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su> ),
+   In( <'auth_chal', <gw_count, access_type>, 
+        mac(<gw_count, access_type>, key_us)>
+   ),
+   Srv_counter( srv_id, gw_id, <key_us, key_su>, srv_count ),
+   Fr( ~new_nonce )
+   ]
+  --[
+  IncrementingCounter( gw_count, srv_count ),
+  A_srv_grants_access( srv_id, gw_id, <gw_count, access_type>,
+                       access_type, <key_us, key_su>
+  )
+  ]->
+   [
+   Out( <'auth_resp', ~new_nonce, 
+         mac(<~new_nonce, mac(<gw_count, access_type>, key_us)>, key_su)>
+   ),
+   Srv_counter( srv_id, gw_id, <key_us, key_su>, gw_count )
+   ]
+
+  // loop breaker: [2]
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Auth_3_Gw_grant_access:
+   [
+   !Gw_key_established( gw_id, <key_us, key_su> ),
+   St_gw_pending( gw_id, <key_us, key_su>, thread_id, access_type,
+                  <count, access_type>
+   ),
+   In( <'auth_resp', new_server_nonce, 
+        mac(<new_server_nonce, mac(<count, access_type>, key_us)>, key_su)>
+   )
+   ]
+  --[
+  Keys_not_dropped( gw_id, <key_us, key_su> ),
+  A_gw_access_granted( gw_id, thread_id, access_type ),
+  A_T5_gw_access_granted( gw_id, <count, access_type>,
+                          <key_us, key_su>
+  ),
+  A_gw_challenge_clear( gw_id, thread_id ),
+  T_access_start( gw_id, thread_id, <count, access_type> )
+  ]->
+   [
+   St_gw_resource_accessible( gw_id, <key_us, key_su>, thread_id,
+                              access_type
+   )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Auth_gw_access_timeout:
+   [
+   St_gw_resource_accessible( gw_id, session_keys, thread_id,
+                              access_type
+   )
+   ]
+  --[
+  T_access_timeout( gw_id, thread_id ),
+  A_gw_access_revoked( gw_id, thread_id, access_type )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Auth_gw_drop_challenge:
+   [
+   St_gw_pending( gw_id, session_keys, thread_id, access_type,
+                  challenge
+   )
+   ]
+  --[
+  A_gw_challenge_dropped( gw_id, thread_id, access_type ),
+  A_gw_challenge_clear( gw_id, thread_id )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Auth_gw_challege_timeout:
+   [
+   St_gw_pending( gw_id, session_keys, thread_id, access_type,
+                  challenge
+   )
+   ]
+  --[
+  T_challenge_timeout( gw_id, thread_id ),
+  A_gw_challenge_clear( gw_id, thread_id )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Access_sensor:
+   [
+   St_gw_resource_accessible( gw_id, session_keys, thread_id,
+                              access_type
+   )
+   ]
+  --[ A_gw_sensor_accessed( gw_id, thread_id, access_type ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+restriction gw_no_concurent_authentication:
+  "∀ gw_id tid1 tid2 at1 at2 #i1 #i2.
+    (((A_Gw_issue_challenge( gw_id, tid1, at1 ) @ #i1) ∧
+      (A_Gw_issue_challenge( gw_id, tid2, at2 ) @ #i2)) ∧
+     (#i1 < #i2)) ⇒
+    (∃ #j. (A_gw_challenge_clear( gw_id, tid1 ) @ #j) ∧ (#j < #i2))"
+
+restriction Reboot_requires_no_active_challenge:
+  "∀ gw_id thread_id access_type #i #j.
+    (((A_Gw_issue_challenge( gw_id, thread_id, access_type ) @ #i) ∧
+      (A_gw_rebooted( gw_id ) @ #j)) ∧
+     (#i < #j)) ⇒
+    (∃ #k.
+      (A_gw_challenge_clear( gw_id, thread_id ) @ #k) ∧ (#k < #j))"
+
+restriction IncrementingCounter:
+  "∀ gw_count srv_count #i.
+    (IncrementingCounter( gw_count, srv_count ) @ #i) ⇒
+    (∃ u. gw_count = (srv_count+u))"
+
+lemma t_access_start_restrictions:
+  all-traces
+  "∀ gw_id challenge thread_id #i.
+    (T_access_start( gw_id, thread_id, challenge ) @ #i) ⇒
+    (∃ #j.
+      ((T_challenge_start( gw_id, thread_id, challenge ) @ #j) ∧
+       (#j < #i)) ∧
+      (¬(∃ #k.
+          (T_challenge_timeout( gw_id, thread_id ) @ #k) ∧ (#k < #i))))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ gw_id challenge thread_id #i.
+  (T_access_start( gw_id, thread_id, challenge ) @ #i)
+ ∧
+  ∀ #j.
+   (T_challenge_start( gw_id, thread_id, challenge ) @ #j)
+  ⇒
+   ((¬(#j < #i)) ∨
+    (∃ #k. (T_challenge_timeout( gw_id, thread_id ) @ #k) ∧ #k < #i))"
+*/
+simplify
+solve( !Gw_key_established( gw_id, <key_us, key_su> ) ▶₀ #i )
+  case Pairing
+  solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                        <count, access_type>
+         ) ▶₁ #i )
+    case Auth_1_Gw_send_challenge_case_1
+    by solve( St_gw_pending( $gw_id, session_keys, ~n.2, access_type.1,
+                             challenge
+              ) ▶₀ #k )
+  next
+    case Auth_1_Gw_send_challenge_case_2
+    by solve( St_gw_pending( $gw_id, session_keys, ~n.2, access_type.1,
+                             challenge
+              ) ▶₀ #k )
+  next
+    case Auth_1_Gw_send_challenge_case_3
+    by solve( St_gw_pending( $gw_id, session_keys, ~n.2, access_type.1,
+                             challenge
+              ) ▶₀ #k )
+  qed
+qed
+
+lemma t_grant_after_chal:
+  all-traces
+  "∀ srv_id gw_id challenge access_type session_keys #i.
+    (A_srv_grants_access( srv_id, gw_id, challenge, access_type,
+                          session_keys
+     ) @ #i) ⇒
+    ((∃ thread_id #j.
+       (T_challenge_start( gw_id, thread_id, challenge ) @ #j) ∧
+       (#j < #i)) ∨
+     (∃ #j. (A_reveal( gw_id ) @ #j) ∧ (#j < #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ srv_id gw_id challenge access_type session_keys #i.
+  (A_srv_grants_access( srv_id, gw_id, challenge, access_type,
+                        session_keys
+   ) @ #i)
+ ∧
+  (∀ thread_id #j.
+    (T_challenge_start( gw_id, thread_id, challenge ) @ #j)
+   ⇒
+    ¬(#j < #i)) ∧
+  (∀ #j. (A_reveal( gw_id ) @ #j) ⇒ ¬(#j < #i))"
+*/
+simplify
+solve( !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su>
+       ) ▶₀ #i )
+  case Pairing
+  solve( !KU( mac(<(srv_count+u), access_type>, ~n) ) @ #vk.6 )
+    case Auth_1_Gw_send_challenge_case_1
+    by contradiction /* from formulas */
+  next
+    case Auth_1_Gw_send_challenge_case_2
+    by contradiction /* from formulas */
+  next
+    case Auth_1_Gw_send_challenge_case_3
+    by contradiction /* from formulas */
+  next
+    case Auth_1_Gw_send_challenge_case_4
+    by contradiction /* from formulas */
+  next
+    case Auth_1_Gw_send_challenge_case_5
+    by contradiction /* from formulas */
+  next
+    case Auth_1_Gw_send_challenge_case_6
+    by contradiction /* from formulas */
+  next
+    case Auth_1_Gw_send_challenge_case_7
+    by contradiction /* from formulas */
+  next
+    case Auth_1_Gw_send_challenge_case_8
+    by contradiction /* from formulas */
+  next
+    case Auth_1_Gw_send_challenge_case_9
+    by contradiction /* from formulas */
+  next
+    case c_mac
+    solve( !KU( ~n ) @ #vk.9 )
+      case Reveal_gw
+      by contradiction /* from formulas */
+    qed
+  qed
+qed
+
+lemma t_access_after_grant:
+  all-traces
+  "∀ gw_id challenge thread_id #i.
+    (T_access_start( gw_id, thread_id, challenge ) @ #i) ⇒
+    ((∃ srv_id access_type session_keys #j.
+       (A_srv_grants_access( srv_id, gw_id, challenge, access_type,
+                             session_keys
+        ) @ #j) ∧
+       (#j < #i)) ∨
+     (∃ #j. (A_reveal( gw_id ) @ #j) ∧ (#j < #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ gw_id challenge thread_id #i.
+  (T_access_start( gw_id, thread_id, challenge ) @ #i)
+ ∧
+  (∀ srv_id access_type session_keys #j.
+    (A_srv_grants_access( srv_id, gw_id, challenge, access_type,
+                          session_keys
+     ) @ #j)
+   ⇒
+    ¬(#j < #i)) ∧
+  (∀ #j. (A_reveal( gw_id ) @ #j) ⇒ ¬(#j < #i))"
+*/
+simplify
+solve( !Gw_key_established( gw_id, <key_us, key_su> ) ▶₀ #i )
+  case Pairing
+  solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                        <count, access_type>
+         ) ▶₁ #i )
+    case Auth_1_Gw_send_challenge_case_1
+    solve( !KU( mac(<new_server_nonce, 
+                     mac(<('1'+'1'), access_type>, ~n)>,
+                    ~n.1)
+           ) @ #vk.4 )
+      case Auth_2_Srv_send_response
+      by contradiction /* from formulas */
+    next
+      case c_mac
+      solve( !KU( ~n.1 ) @ #vk.9 )
+        case Reveal_gw
+        by contradiction /* from formulas */
+      qed
+    qed
+  next
+    case Auth_1_Gw_send_challenge_case_2
+    solve( !KU( mac(<new_server_nonce, 
+                     mac(<('1'+count), access_type>, ~n)>,
+                    ~n.1)
+           ) @ #vk.4 )
+      case Auth_2_Srv_send_response_case_1
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_2
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_3
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_4
+      by contradiction /* from formulas */
+    next
+      case c_mac
+      solve( !KU( ~n.1 ) @ #vk.10 )
+        case Reveal_gw
+        by contradiction /* from formulas */
+      qed
+    qed
+  next
+    case Auth_1_Gw_send_challenge_case_3
+    solve( !KU( mac(<new_server_nonce, 
+                     mac(<('1'+count), access_type>, ~n)>,
+                    ~n.1)
+           ) @ #vk.4 )
+      case Auth_2_Srv_send_response_case_1
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_2
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_3
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_4
+      by contradiction /* from formulas */
+    next
+      case c_mac
+      solve( !KU( ~n.1 ) @ #vk.10 )
+        case Reveal_gw
+        by contradiction /* from formulas */
+      qed
+    qed
+  qed
+qed
+
+lemma t_access_during_timer:
+  all-traces
+  "∀ gw_id thread_id access_type #i.
+    (A_gw_sensor_accessed( gw_id, thread_id, access_type ) @ #i) ⇒
+    ((∃ challenge #j.
+       (T_access_start( gw_id, thread_id, challenge ) @ #j) ∧ (#j < #i)) ∧
+     (¬(∃ #j.
+         (T_access_timeout( gw_id, thread_id ) @ #j) ∧ (#j < #i))))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ gw_id thread_id access_type #i.
+  (A_gw_sensor_accessed( gw_id, thread_id, access_type ) @ #i)
+ ∧
+  ((∀ challenge #j.
+     (T_access_start( gw_id, thread_id, challenge ) @ #j)
+    ⇒
+     ¬(#j < #i)) ∨
+   (∃ #j. (T_access_timeout( gw_id, thread_id ) @ #j) ∧ #j < #i))"
+*/
+simplify
+solve( (∀ challenge #j.
+         (T_access_start( gw_id, thread_id, challenge ) @ #j)
+        ⇒
+         ¬(#j < #i))  ∥
+       (∃ #j. (T_access_timeout( gw_id, thread_id ) @ #j) ∧ #j < #i) )
+  case case_1
+  solve( St_gw_resource_accessible( gw_id, session_keys, thread_id,
+                                    access_type
+         ) ▶₀ #i )
+    case Auth_3_Gw_grant_access_case_1
+    by contradiction /* from formulas */
+  next
+    case Auth_3_Gw_grant_access_case_2
+    by contradiction /* from formulas */
+  next
+    case Auth_3_Gw_grant_access_case_3
+    by contradiction /* from formulas */
+  qed
+next
+  case case_2
+  solve( St_gw_resource_accessible( gw_id, session_keys, thread_id,
+                                    access_type
+         ) ▶₀ #i )
+    case Auth_3_Gw_grant_access_case_1
+    by solve( St_gw_resource_accessible( $gw_id, session_keys, ~n.2,
+                                         access_type.1
+              ) ▶₀ #j )
+  next
+    case Auth_3_Gw_grant_access_case_2
+    by solve( St_gw_resource_accessible( $gw_id, session_keys, ~n.2,
+                                         access_type.1
+              ) ▶₀ #j )
+  next
+    case Auth_3_Gw_grant_access_case_3
+    by solve( St_gw_resource_accessible( $gw_id, session_keys, ~n.2,
+                                         access_type.1
+              ) ▶₀ #j )
+  qed
+qed
+
+lemma no_double_access_for_same_challenge [reuse]:
+  all-traces
+  "∀ gw_id challenge session_keys #i1 #i2.
+    ((A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i1) ∧
+     (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i2)) ⇒
+    (#i1 = #i2)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ gw_id challenge session_keys #i1 #i2.
+  (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i1) ∧
+  (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i2)
+ ∧
+  ¬(#i1 = #i2)"
+*/
+simplify
+solve( (#i1 < #i2)  ∥ (#i2 < #i1) )
+  case case_1
+  solve( !Gw_key_established( gw_id, <key_us, key_su> ) ▶₀ #i1 )
+    case Pairing
+    solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                          <count, access_type>
+           ) ▶₁ #i1 )
+      case Auth_1_Gw_send_challenge_case_1
+      solve( !Gw_key_established( $gw_id, <~n, ~n.1> ) ▶₀ #i2 )
+        case Pairing
+        solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                              <('1'+'1'), access_type>
+               ) ▶₁ #i2 )
+          case Auth_1_Gw_send_challenge_case_1
+          solve( (¬(#vr.2 < #vr.3))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.3 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+              case case_1
+              solve( (¬(#vr.2 < #vr.3))  ∥
+                     (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.3) )
+                case case_1
+                solve( (¬(#vr.3 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              next
+                case case_2
+                solve( (¬(#vr.3 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_2
+          solve( (¬(#vr.2 < #vr.3))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. ('1' = ('1'+'1'+z))) )
+              case case_1
+              solve( (¬(#vr.3 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+                case case_1
+                solve( (¬(#vr.2 < #vr.3))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.3) )
+                  case case_1
+                  solve( (¬(#vr.3 < #vr.2))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                    case case_1
+                    solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  next
+                    case case_2
+                    solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  qed
+                next
+                  case case_2
+                  solve( (¬(#vr.3 < #vr.2))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                    case case_1
+                    solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  next
+                    case case_2
+                    solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_3
+          solve( (¬(#vr.2 < #vr.3))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.3 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+              case case_1
+              solve( (¬(#vr.2 < #vr.3))  ∥
+                     (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.3) )
+                case case_1
+                solve( (¬(#vr.3 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              next
+                case case_2
+                solve( (¬(#vr.3 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    next
+      case Auth_1_Gw_send_challenge_case_2
+      solve( !Gw_key_established( $gw_id, <~n, ~n.1> ) ▶₀ #i2 )
+        case Pairing
+        solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                              <('1'+count), access_type>
+               ) ▶₁ #i2 )
+          case Auth_1_Gw_send_challenge_case_1
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.3 < #vr.4))  ∥ (∃ z. (('1'+'1') = ('1'+z))) )
+              case case_2
+              solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+                case case_1
+                solve( (¬(#vr.4 < #vr.3))  ∥ (∃ z. ('1' = ('1'+'1'+z))) )
+                  case case_1
+                  solve( (¬(#vr.2 < #vr.4))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                    case case_1
+                    solve( (¬(#vr.4 < #vr.2))  ∥
+                           (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                      case case_1
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    next
+                      case case_2
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    qed
+                  next
+                    case case_2
+                    solve( (¬(#vr.4 < #vr.2))  ∥
+                           (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                      case case_1
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    next
+                      case case_2
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_2
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+            case case_1
+            solve( (¬(#vr.2 < #vr.5))  ∥ (∃ z. (count = ('1'+count+z))) )
+              case case_1
+              solve( (¬(#vr.3 < #vr.4))  ∥ (∃ z. (('1'+count) = (count+z))) )
+                case case_2
+                solve( (¬(#vr.3 < #vr.5))  ∥ (∃ z. (count = (count+z))) )
+                  case case_1
+                  solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+                    case case_1
+                    solve( (¬(#vr.4 < #vr.3))  ∥ (∃ z. (count = ('1'+count+z))) )
+                      case case_1
+                      solve( (¬(#vr.5 < #vr.3))  ∥ (∃ z. (count = (count+z))) )
+                        case case_1
+                        solve( (¬(#vr.2 < #vr.4))  ∥
+                               (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                          case case_1
+                          solve( (¬(#vr.4 < #vr.2))  ∥
+                                 (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                            case case_1
+                            solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                              case case_1
+                              by contradiction /* cyclic */
+                            next
+                              case case_2
+                              by contradiction /* from formulas */
+                            qed
+                          next
+                            case case_2
+                            solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                              case case_1
+                              by contradiction /* cyclic */
+                            next
+                              case case_2
+                              by contradiction /* from formulas */
+                            qed
+                          qed
+                        next
+                          case case_2
+                          solve( (¬(#vr.4 < #vr.2))  ∥
+                                 (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                            case case_1
+                            solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                              case case_1
+                              by contradiction /* cyclic */
+                            next
+                              case case_2
+                              by contradiction /* from formulas */
+                            qed
+                          next
+                            case case_2
+                            solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                              case case_1
+                              by contradiction /* cyclic */
+                            next
+                              case case_2
+                              by contradiction /* from formulas */
+                            qed
+                          qed
+                        qed
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_3
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+            case case_1
+            solve( (¬(#vr.3 < #vr.4))  ∥ (∃ z. (('1'+count) = (count+z))) )
+              case case_2
+              solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+                case case_1
+                solve( (¬(#vr.4 < #vr.3))  ∥ (∃ z. (count = ('1'+count+z))) )
+                  case case_1
+                  solve( (¬(#vr.2 < #vr.4))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                    case case_1
+                    solve( (¬(#vr.4 < #vr.2))  ∥
+                           (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                      case case_1
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    next
+                      case case_2
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    qed
+                  next
+                    case case_2
+                    solve( (¬(#vr.4 < #vr.2))  ∥
+                           (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                      case case_1
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    next
+                      case case_2
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    next
+      case Auth_1_Gw_send_challenge_case_3
+      solve( !Gw_key_established( $gw_id, <~n, ~n.1> ) ▶₀ #i2 )
+        case Pairing
+        solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                              <('1'+count), access_type>
+               ) ▶₁ #i2 )
+          case Auth_1_Gw_send_challenge_case_1
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+              case case_1
+              solve( (¬(#vr.2 < #vr.4))  ∥
+                     (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                case case_1
+                solve( (¬(#vr.4 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              next
+                case case_2
+                solve( (¬(#vr.4 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_2
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+            case case_1
+            solve( (¬(#vr.2 < #vr.5))  ∥ (∃ z. (count = ('1'+count+z))) )
+              case case_1
+              solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+                case case_1
+                solve( (¬(#vr.2 < #vr.4))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                  case case_1
+                  solve( (¬(#vr.4 < #vr.2))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                    case case_1
+                    solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  next
+                    case case_2
+                    solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  qed
+                next
+                  case case_2
+                  solve( (¬(#vr.4 < #vr.2))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                    case case_1
+                    solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  next
+                    case case_2
+                    solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_3
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+            case case_1
+            solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+              case case_1
+              solve( (¬(#vr.2 < #vr.4))  ∥
+                     (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                case case_1
+                solve( (¬(#vr.4 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              next
+                case case_2
+                solve( (¬(#vr.4 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+next
+  case case_2
+  solve( !Gw_key_established( gw_id, <key_us, key_su> ) ▶₀ #i1 )
+    case Pairing
+    solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                          <count, access_type>
+           ) ▶₁ #i1 )
+      case Auth_1_Gw_send_challenge_case_1
+      solve( !Gw_key_established( $gw_id, <~n, ~n.1> ) ▶₀ #i2 )
+        case Pairing
+        solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                              <('1'+'1'), access_type>
+               ) ▶₁ #i2 )
+          case Auth_1_Gw_send_challenge_case_1
+          solve( (¬(#vr.2 < #vr.3))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.3 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+              case case_1
+              solve( (¬(#vr.2 < #vr.3))  ∥
+                     (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.3) )
+                case case_1
+                solve( (¬(#vr.3 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              next
+                case case_2
+                solve( (¬(#vr.3 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_2
+          solve( (¬(#vr.2 < #vr.3))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. ('1' = ('1'+'1'+z))) )
+              case case_1
+              solve( (¬(#vr.3 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+                case case_1
+                solve( (¬(#vr.2 < #vr.3))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.3) )
+                  case case_1
+                  solve( (¬(#vr.3 < #vr.2))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                    case case_1
+                    solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  next
+                    case case_2
+                    solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  qed
+                next
+                  case case_2
+                  solve( (¬(#vr.3 < #vr.2))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                    case case_1
+                    solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  next
+                    case case_2
+                    solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_3
+          solve( (¬(#vr.2 < #vr.3))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.3 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+              case case_1
+              solve( (¬(#vr.2 < #vr.3))  ∥
+                     (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.3) )
+                case case_1
+                solve( (¬(#vr.3 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              next
+                case case_2
+                solve( (¬(#vr.3 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.3)  ∥ (#vr.3 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    next
+      case Auth_1_Gw_send_challenge_case_2
+      solve( !Gw_key_established( $gw_id, <~n, ~n.1> ) ▶₀ #i2 )
+        case Pairing
+        solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                              <('1'+count), access_type>
+               ) ▶₁ #i2 )
+          case Auth_1_Gw_send_challenge_case_1
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.3 < #vr.4))  ∥ (∃ z. (('1'+'1') = ('1'+z))) )
+              case case_2
+              solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+                case case_1
+                solve( (¬(#vr.4 < #vr.3))  ∥ (∃ z. ('1' = ('1'+'1'+z))) )
+                  case case_1
+                  solve( (¬(#vr.2 < #vr.4))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                    case case_1
+                    solve( (¬(#vr.4 < #vr.2))  ∥
+                           (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                      case case_1
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    next
+                      case case_2
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    qed
+                  next
+                    case case_2
+                    solve( (¬(#vr.4 < #vr.2))  ∥
+                           (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                      case case_1
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    next
+                      case case_2
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_2
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+            case case_1
+            solve( (¬(#vr.2 < #vr.5))  ∥ (∃ z. (count = ('1'+count+z))) )
+              case case_1
+              solve( (¬(#vr.3 < #vr.4))  ∥ (∃ z. (('1'+count) = (count+z))) )
+                case case_2
+                solve( (¬(#vr.3 < #vr.5))  ∥ (∃ z. (count = (count+z))) )
+                  case case_1
+                  solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+                    case case_1
+                    solve( (¬(#vr.4 < #vr.3))  ∥ (∃ z. (count = ('1'+count+z))) )
+                      case case_1
+                      solve( (¬(#vr.5 < #vr.3))  ∥ (∃ z. (count = (count+z))) )
+                        case case_1
+                        solve( (¬(#vr.2 < #vr.4))  ∥
+                               (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                          case case_1
+                          solve( (¬(#vr.4 < #vr.2))  ∥
+                                 (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                            case case_1
+                            solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                              case case_1
+                              by contradiction /* cyclic */
+                            next
+                              case case_2
+                              by contradiction /* from formulas */
+                            qed
+                          next
+                            case case_2
+                            solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                              case case_1
+                              by contradiction /* cyclic */
+                            next
+                              case case_2
+                              by contradiction /* from formulas */
+                            qed
+                          qed
+                        next
+                          case case_2
+                          solve( (¬(#vr.4 < #vr.2))  ∥
+                                 (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                            case case_1
+                            solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                              case case_1
+                              by contradiction /* cyclic */
+                            next
+                              case case_2
+                              by contradiction /* from formulas */
+                            qed
+                          next
+                            case case_2
+                            solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                              case case_1
+                              by contradiction /* cyclic */
+                            next
+                              case case_2
+                              by contradiction /* from formulas */
+                            qed
+                          qed
+                        qed
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_3
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+            case case_1
+            solve( (¬(#vr.3 < #vr.4))  ∥ (∃ z. (('1'+count) = (count+z))) )
+              case case_2
+              solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+                case case_1
+                solve( (¬(#vr.4 < #vr.3))  ∥ (∃ z. (count = ('1'+count+z))) )
+                  case case_1
+                  solve( (¬(#vr.2 < #vr.4))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                    case case_1
+                    solve( (¬(#vr.4 < #vr.2))  ∥
+                           (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                      case case_1
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    next
+                      case case_2
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    qed
+                  next
+                    case case_2
+                    solve( (¬(#vr.4 < #vr.2))  ∥
+                           (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                      case case_1
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    next
+                      case case_2
+                      solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                        case case_2
+                        by contradiction /* from formulas */
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    next
+      case Auth_1_Gw_send_challenge_case_3
+      solve( !Gw_key_established( $gw_id, <~n, ~n.1> ) ▶₀ #i2 )
+        case Pairing
+        solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                              <('1'+count), access_type>
+               ) ▶₁ #i2 )
+          case Auth_1_Gw_send_challenge_case_1
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+            case case_1
+            solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+'1') = ('1'+'1'+z))) )
+              case case_1
+              solve( (¬(#vr.2 < #vr.4))  ∥
+                     (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                case case_1
+                solve( (¬(#vr.4 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              next
+                case case_2
+                solve( (¬(#vr.4 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_2
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+            case case_1
+            solve( (¬(#vr.2 < #vr.5))  ∥ (∃ z. (count = ('1'+count+z))) )
+              case case_1
+              solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+                case case_1
+                solve( (¬(#vr.2 < #vr.4))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                  case case_1
+                  solve( (¬(#vr.4 < #vr.2))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                    case case_1
+                    solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  next
+                    case case_2
+                    solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  qed
+                next
+                  case case_2
+                  solve( (¬(#vr.4 < #vr.2))  ∥
+                         (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                    case case_1
+                    solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  next
+                    case case_2
+                    solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                      case case_2
+                      by contradiction /* from formulas */
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        next
+          case Auth_1_Gw_send_challenge_case_3
+          solve( (¬(#vr.2 < #vr.4))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+            case case_1
+            solve( (¬(#vr.4 < #vr.2))  ∥ (∃ z. (('1'+count) = ('1'+count+z))) )
+              case case_1
+              solve( (¬(#vr.2 < #vr.4))  ∥
+                     (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j) ∧ #j < #vr.4) )
+                case case_1
+                solve( (¬(#vr.4 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              next
+                case case_2
+                solve( (¬(#vr.4 < #vr.2))  ∥
+                       (∃ #j. (A_gw_challenge_clear( $gw_id, ~n.3 ) @ #j) ∧ #j < #vr.2) )
+                  case case_1
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case case_2
+                  solve( (#vr.2 = #vr.4)  ∥ (#vr.4 < #vr.2) )
+                    case case_1
+                    by contradiction /* cyclic */
+                  next
+                    case case_2
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma grant_required:
+  all-traces
+  "∀ gw_id challenge session_keys #i.
+    (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i) ⇒
+    ((∃ srv_id at #j.
+       (A_srv_grants_access( srv_id, gw_id, challenge, at, session_keys
+        ) @ #j) ∧
+       (#j < #i)) ∨
+     (∃ #j. (A_reveal( gw_id ) @ #j) ∧ (#j < #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ gw_id challenge session_keys #i.
+  (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i)
+ ∧
+  (∀ srv_id at #j.
+    (A_srv_grants_access( srv_id, gw_id, challenge, at, session_keys
+     ) @ #j)
+   ⇒
+    ¬(#j < #i)) ∧
+  (∀ #j. (A_reveal( gw_id ) @ #j) ⇒ ¬(#j < #i))"
+*/
+simplify
+solve( !Gw_key_established( gw_id, <key_us, key_su> ) ▶₀ #i )
+  case Pairing
+  solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                        <count, access_type>
+         ) ▶₁ #i )
+    case Auth_1_Gw_send_challenge_case_1
+    solve( !KU( mac(<new_server_nonce, 
+                     mac(<('1'+'1'), access_type>, ~n)>,
+                    ~n.1)
+           ) @ #vk.4 )
+      case Auth_2_Srv_send_response
+      by contradiction /* from formulas */
+    next
+      case c_mac
+      solve( !KU( ~n.1 ) @ #vk.9 )
+        case Reveal_gw
+        by contradiction /* from formulas */
+      qed
+    qed
+  next
+    case Auth_1_Gw_send_challenge_case_2
+    solve( !KU( mac(<new_server_nonce, 
+                     mac(<('1'+count), access_type>, ~n)>,
+                    ~n.1)
+           ) @ #vk.4 )
+      case Auth_2_Srv_send_response_case_1
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_2
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_3
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_4
+      by contradiction /* from formulas */
+    next
+      case c_mac
+      solve( !KU( ~n.1 ) @ #vk.10 )
+        case Reveal_gw
+        by contradiction /* from formulas */
+      qed
+    qed
+  next
+    case Auth_1_Gw_send_challenge_case_3
+    solve( !KU( mac(<new_server_nonce, 
+                     mac(<('1'+count), access_type>, ~n)>,
+                    ~n.1)
+           ) @ #vk.4 )
+      case Auth_2_Srv_send_response_case_1
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_2
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_3
+      by contradiction /* from formulas */
+    next
+      case Auth_2_Srv_send_response_case_4
+      by contradiction /* from formulas */
+    next
+      case c_mac
+      solve( !KU( ~n.1 ) @ #vk.10 )
+        case Reveal_gw
+        by contradiction /* from formulas */
+      qed
+    qed
+  qed
+qed
+
+lemma one_access_per_grant:
+  all-traces
+  "(∀ gw_id challenge session_keys #i1 #i2.
+     ((A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i1) ∧
+      (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i2)) ⇒
+     (#i1 = #i2)) ∧
+   (∀ gw_id challenge session_keys #i.
+     (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i) ⇒
+     ((∃ srv_id at #j.
+        (A_srv_grants_access( srv_id, gw_id, challenge, at, session_keys
+         ) @ #j) ∧
+        (#j < #i)) ∨
+      (∃ #j. (A_reveal( gw_id ) @ #j) ∧ (#j < #i))))"
+/*
+guarded formula characterizing all counter-examples:
+"((∃ gw_id challenge session_keys #i1 #i2.
+    (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i1) ∧
+    (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i2)
+   ∧
+    ¬(#i1 = #i2)) ∨
+  (∃ gw_id challenge session_keys #i.
+    (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i)
+   ∧
+    (∀ srv_id at #j.
+      (A_srv_grants_access( srv_id, gw_id, challenge, at, session_keys
+       ) @ #j)
+     ⇒
+      ¬(#j < #i)) ∧
+    (∀ #j. (A_reveal( gw_id ) @ #j) ⇒ ¬(#j < #i))))"
+*/
+simplify
+solve( (∃ gw_id challenge session_keys #i1 #i2.
+         (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i1) ∧
+         (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i2)
+        ∧
+         ¬(#i1 = #i2))  ∥
+       (∃ gw_id challenge session_keys #i.
+         (A_T5_gw_access_granted( gw_id, challenge, session_keys ) @ #i)
+        ∧
+         (∀ srv_id at #j.
+           (A_srv_grants_access( srv_id, gw_id, challenge, at, session_keys
+            ) @ #j)
+          ⇒
+           ¬(#j < #i)) ∧
+         (∀ #j. (A_reveal( gw_id ) @ #j) ⇒ ¬(#j < #i))) )
+  case case_1
+  by contradiction /* from formulas */
+next
+  case case_2
+  solve( !Gw_key_established( gw_id, <key_us, key_su> ) ▶₀ #i )
+    case Pairing
+    solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                          <count, access_type>
+           ) ▶₁ #i )
+      case Auth_1_Gw_send_challenge_case_1
+      solve( !KU( mac(<new_server_nonce, 
+                       mac(<('1'+'1'), access_type>, ~n)>,
+                      ~n.1)
+             ) @ #vk.4 )
+        case Auth_2_Srv_send_response
+        by contradiction /* from formulas */
+      next
+        case c_mac
+        solve( !KU( ~n.1 ) @ #vk.9 )
+          case Reveal_gw
+          by contradiction /* from formulas */
+        qed
+      qed
+    next
+      case Auth_1_Gw_send_challenge_case_2
+      solve( !KU( mac(<new_server_nonce, 
+                       mac(<('1'+count), access_type>, ~n)>,
+                      ~n.1)
+             ) @ #vk.4 )
+        case Auth_2_Srv_send_response_case_1
+        by contradiction /* from formulas */
+      next
+        case Auth_2_Srv_send_response_case_2
+        by contradiction /* from formulas */
+      next
+        case Auth_2_Srv_send_response_case_3
+        by contradiction /* from formulas */
+      next
+        case Auth_2_Srv_send_response_case_4
+        by contradiction /* from formulas */
+      next
+        case c_mac
+        solve( !KU( ~n.1 ) @ #vk.10 )
+          case Reveal_gw
+          by contradiction /* from formulas */
+        qed
+      qed
+    next
+      case Auth_1_Gw_send_challenge_case_3
+      solve( !KU( mac(<new_server_nonce, 
+                       mac(<('1'+count), access_type>, ~n)>,
+                      ~n.1)
+             ) @ #vk.4 )
+        case Auth_2_Srv_send_response_case_1
+        by contradiction /* from formulas */
+      next
+        case Auth_2_Srv_send_response_case_2
+        by contradiction /* from formulas */
+      next
+        case Auth_2_Srv_send_response_case_3
+        by contradiction /* from formulas */
+      next
+        case Auth_2_Srv_send_response_case_4
+        by contradiction /* from formulas */
+      next
+        case c_mac
+        solve( !KU( ~n.1 ) @ #vk.10 )
+          case Reveal_gw
+          by contradiction /* from formulas */
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma executable_gw_granted_paired_twice:
+  exists-trace
+  "((((∃ gw_id thread_id access_type session_keys_1 session_keys_2 #i
+         #p1 #p2.
+        ((((A_gw_paired( gw_id, session_keys_1 ) @ #p1) ∧
+           (A_gw_paired( gw_id, session_keys_2 ) @ #p2)) ∧
+          (A_gw_access_granted( gw_id, thread_id, access_type ) @ #i)) ∧
+         (#p1 < #p2)) ∧
+        (#p2 < #i)) ∧
+      (∀ gw_id_1 gw_id_2 tid_1 tid_2 at_1 at_2 #i1 #i2.
+        ((A_Gw_issue_challenge( gw_id_1, tid_1, at_1 ) @ #i1) ∧
+         (A_Gw_issue_challenge( gw_id_2, tid_2, at_2 ) @ #i2)) ⇒
+        (#i1 = #i2))) ∧
+     (¬(∃ gwid count #i. A_reveal_counter( gwid, count ) @ #i))) ∧
+    (¬(∃ gwid #i. A_gw_rebooted( gwid ) @ #i))) ∧
+   (¬(∃ gwid #i. A_reveal( gwid ) @ #i))"
+/*
+guarded formula characterizing all satisfying traces:
+"(∃ gw_id thread_id access_type session_keys_1 session_keys_2 #i
+    #p1 #p2.
+   (A_gw_paired( gw_id, session_keys_1 ) @ #p1) ∧
+   (A_gw_paired( gw_id, session_keys_2 ) @ #p2) ∧
+   (A_gw_access_granted( gw_id, thread_id, access_type ) @ #i)
+  ∧
+   (#p1 < #p2) ∧ (#p2 < #i)) ∧
+ (∀ gw_id_1 gw_id_2 tid_1 tid_2 at_1 at_2 #i1 #i2.
+   (A_Gw_issue_challenge( gw_id_1, tid_1, at_1 ) @ #i1) ∧
+   (A_Gw_issue_challenge( gw_id_2, tid_2, at_2 ) @ #i2)
+  ⇒
+   #i1 = #i2) ∧
+ (∀ gwid count #i. (A_reveal_counter( gwid, count ) @ #i) ⇒ ⊥) ∧
+ (∀ gwid #i. (A_gw_rebooted( gwid ) @ #i) ⇒ ⊥) ∧
+ (∀ gwid #i. (A_reveal( gwid ) @ #i) ⇒ ⊥)"
+*/
+simplify
+solve( !Gw_key_established( $gw_id, <key_us, key_su> ) ▶₀ #i )
+  case Pairing
+  solve( (¬(#p1 < #vr))  ∥
+         (∃ #j.
+           (A_gw_dropped_keys( $gw_id, <~n.2, ~n.3> ) @ #j) ∧ #j < #vr) )
+    case case_2
+    solve( (¬(#p2 < #vr))  ∥
+           (∃ #j.
+             (A_gw_dropped_keys( $gw_id, <~n.4, ~n.5> ) @ #j) ∧ #j < #vr) )
+      case case_1
+      solve( (¬(#vr < #p1))  ∥
+             (∃ #j. (A_gw_dropped_keys( $gw_id, <~n, ~n.1> ) @ #j) ∧ #j < #p1) )
+        case case_1
+        solve( (¬(#vr < #p2))  ∥
+               (∃ #j. (A_gw_dropped_keys( $gw_id, <~n, ~n.1> ) @ #j) ∧ #j < #p2) )
+          case case_1
+          solve( (#j.1 = #j)  ∥ (#j < #j.1) )
+            case case_1
+            solve( (#p2 = #vr)  ∥ (#vr < #p2) )
+              case case_1
+              solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id, access_type,
+                                    <count, access_type>
+                     ) ▶₁ #i )
+                case Auth_1_Gw_send_challenge_case_1
+                solve( !Gateway( $gw_id ) ▶₂ #p1 )
+                  case Register_gw
+                  solve( !Gw_key_established( $gw_id, <~n.3, ~n.4> ) ▶₀ #j )
+                    case Pairing
+                    solve( !KU( mac(<new_server_nonce, 
+                                     mac(<('1'+'1'), access_type>, ~n)>,
+                                    ~n.1)
+                           ) @ #vk.4 )
+                      case Auth_2_Srv_send_response
+                      solve( Srv_counter( $srv_id.1, $gw_id, <~n, ~n.1>, '1' ) ▶₂ #vr.2 )
+                        case Pairing
+                        solve( !KU( ~new_nonce ) @ #vk.4 )
+                          case Auth_2_Srv_send_response
+                          solve( !KU( mac(<('1'+'1'), access_type>, ~n) ) @ #vk.12 )
+                            case Auth_1_Gw_send_challenge
+                            SOLVED // trace found
+                          qed
+                        qed
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma executable_gw_revoked:
+  exists-trace
+  "((((∃ gw_id thread_id access_type #i.
+        A_gw_access_revoked( gw_id, thread_id, access_type ) @ #i) ∧
+      (∀ gw_id_1 gw_id_2 tid_1 tid_2 at_1 at_2 #i1 #i2.
+        ((A_Gw_issue_challenge( gw_id_1, tid_1, at_1 ) @ #i1) ∧
+         (A_Gw_issue_challenge( gw_id_2, tid_2, at_2 ) @ #i2)) ⇒
+        (#i1 = #i2))) ∧
+     (¬(∃ gwid count #i. A_reveal_counter( gwid, count ) @ #i))) ∧
+    (¬(∃ gwid #i. A_gw_rebooted( gwid ) @ #i))) ∧
+   (¬(∃ gwid #i. A_reveal( gwid ) @ #i))"
+/*
+guarded formula characterizing all satisfying traces:
+"(∃ gw_id thread_id access_type #i.
+   (A_gw_access_revoked( gw_id, thread_id, access_type ) @ #i)) ∧
+ (∀ gw_id_1 gw_id_2 tid_1 tid_2 at_1 at_2 #i1 #i2.
+   (A_Gw_issue_challenge( gw_id_1, tid_1, at_1 ) @ #i1) ∧
+   (A_Gw_issue_challenge( gw_id_2, tid_2, at_2 ) @ #i2)
+  ⇒
+   #i1 = #i2) ∧
+ (∀ gwid count #i. (A_reveal_counter( gwid, count ) @ #i) ⇒ ⊥) ∧
+ (∀ gwid #i. (A_gw_rebooted( gwid ) @ #i) ⇒ ⊥) ∧
+ (∀ gwid #i. (A_reveal( gwid ) @ #i) ⇒ ⊥)"
+*/
+simplify
+solve( St_gw_resource_accessible( gw_id, session_keys, thread_id,
+                                  access_type
+       ) ▶₀ #i )
+  case Auth_3_Gw_grant_access_case_1
+  solve( !KU( mac(<new_server_nonce, 
+                   mac(<('1'+'1'), access_type>, ~n)>,
+                  ~n.1)
+         ) @ #vk.4 )
+    case Auth_2_Srv_send_response
+    solve( Srv_counter( $srv_id, $gw_id, <~n, ~n.1>, '1' ) ▶₂ #vr.4 )
+      case Pairing
+      solve( !KU( ~new_nonce ) @ #vk.4 )
+        case Auth_2_Srv_send_response
+        solve( !KU( mac(<('1'+'1'), access_type>, ~n) ) @ #vk.12 )
+          case Auth_1_Gw_send_challenge
+          SOLVED // trace found
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma executable_gw_revoked_twice:
+  exists-trace
+  "(((((∃ gw_id thread_id_1 thread_id_2 access_type_1 access_type_2
+          #i1 #i2.
+         ((A_gw_access_revoked( gw_id, thread_id_1, access_type_1 ) @ #i1) ∧
+          (A_gw_access_revoked( gw_id, thread_id_2, access_type_2 ) @ #i2)) ∧
+         (#i1 < #i2)) ∧
+       (∀ gw_id session_keys_1 session_keys_2 #i1 #i2.
+         ((A_gw_paired( gw_id, session_keys_1 ) @ #i1) ∧
+          (A_gw_paired( gw_id, session_keys_2 ) @ #i2)) ⇒
+         (#i1 = #i2))) ∧
+      (∀ gw_id_1 gw_id_2 gw_id_3 tid_1 tid_2 tid_3 at_1 at_2 at_3 #i1 #i2
+         #i3.
+        (((A_Gw_issue_challenge( gw_id_1, tid_1, at_1 ) @ #i1) ∧
+          (A_Gw_issue_challenge( gw_id_2, tid_2, at_2 ) @ #i2)) ∧
+         (A_Gw_issue_challenge( gw_id_3, tid_3, at_3 ) @ #i3)) ⇒
+        (((#i1 = #i2) ∨ (#i2 = #i3)) ∨ (#i1 = #i3)))) ∧
+     (¬(∃ gwid count #i. A_reveal_counter( gwid, count ) @ #i))) ∧
+    (¬(∃ gwid #i. A_gw_rebooted( gwid ) @ #i))) ∧
+   (¬(∃ gwid #i. A_reveal( gwid ) @ #i))"
+/*
+guarded formula characterizing all satisfying traces:
+"(∃ gw_id thread_id_1 thread_id_2 access_type_1 access_type_2 #i1
+    #i2.
+   (A_gw_access_revoked( gw_id, thread_id_1, access_type_1 ) @ #i1) ∧
+   (A_gw_access_revoked( gw_id, thread_id_2, access_type_2 ) @ #i2)
+  ∧
+   #i1 < #i2) ∧
+ (∀ gw_id session_keys_1 session_keys_2 #i1 #i2.
+   (A_gw_paired( gw_id, session_keys_1 ) @ #i1) ∧
+   (A_gw_paired( gw_id, session_keys_2 ) @ #i2)
+  ⇒
+   #i1 = #i2) ∧
+ (∀ gw_id_1 gw_id_2 gw_id_3 tid_1 tid_2 tid_3 at_1 at_2 at_3 #i1 #i2
+    #i3.
+   (A_Gw_issue_challenge( gw_id_1, tid_1, at_1 ) @ #i1) ∧
+   (A_Gw_issue_challenge( gw_id_2, tid_2, at_2 ) @ #i2) ∧
+   (A_Gw_issue_challenge( gw_id_3, tid_3, at_3 ) @ #i3)
+  ⇒
+   ((#i1 = #i2) ∨ (#i2 = #i3) ∨ (#i1 = #i3))) ∧
+ (∀ gwid count #i. (A_reveal_counter( gwid, count ) @ #i) ⇒ ⊥) ∧
+ (∀ gwid #i. (A_gw_rebooted( gwid ) @ #i) ⇒ ⊥) ∧
+ (∀ gwid #i. (A_reveal( gwid ) @ #i) ⇒ ⊥)"
+*/
+simplify
+solve( St_gw_resource_accessible( gw_id, session_keys, thread_id_1,
+                                  access_type_1
+       ) ▶₀ #i1 )
+  case Auth_3_Gw_grant_access_case_1
+  solve( St_gw_resource_accessible( $gw_id, session_keys,
+                                    thread_id_2, access_type_2
+         ) ▶₀ #i2 )
+    case Auth_3_Gw_grant_access_case_1
+    by sorry
+  next
+    case Auth_3_Gw_grant_access_case_2
+    by contradiction /* from formulas */
+  next
+    case Auth_3_Gw_grant_access_case_3
+    solve( (¬(#vr.2 < #vr.5))  ∥ (∃ z. (('1'+count) = ('1'+'1'+z))) )
+      case case_2
+      solve( (¬(#vr.5 < #vr.2))  ∥
+             (∃ z.1. (('1'+'1') = ('1'+'1'+z+z.1))) )
+        case case_1
+        solve( A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j )
+          case Auth_3_Gw_grant_access
+          solve( !Gw_key_established( $gw_id, <key_us, key_su> ) ▶₀ #j )
+            case Pairing
+            solve( St_gw_pending( $gw_id, <~n, ~n.1>, ~n.2, access_type,
+                                  <count, access_type>
+                   ) ▶₁ #j )
+              case Auth_1_Gw_send_challenge
+              solve( !KU( mac(<new_server_nonce, 
+                               mac(<('1'+'1'), access_type>, ~n)>,
+                              ~n.1)
+                     ) @ #vk.5 )
+                case Auth_2_Srv_send_response
+                solve( !KU( mac(<new_server_nonce, 
+                                 mac(<('1'+'1'+z), access_type_2>, ~n)>,
+                                ~n.1)
+                       ) @ #vk.14 )
+                  case Auth_2_Srv_send_response_case_3
+                  solve( !Gw_req_counter( $gw_id, ('1'+z) ) ▶₀ #vr.5 )
+                    case Register_gw
+                    solve( Srv_counter( $srv_id, $gw_id, <~n, ~n.1>, '1' ) ▶₂ #vr.6 )
+                      case Pairing
+                      solve( Srv_counter( $srv_id, $gw_id, <~n, ~n.1>, ('1'+'1')
+                             ) ▶₂ #vr.9 )
+                        case Auth_2_Srv_send_response
+                        solve( !KU( mac(<('1'+'1'), access_type.1>, ~n) ) @ #vk.27 )
+                          case Auth_1_Gw_send_challenge
+                          solve( Srv_counter( $srv_id, $gw_id, <~n, ~n.1>, '1' ) ▶₂ #vr.12 )
+                            case Pairing
+                            solve( !KU( ~new_nonce ) @ #vk.10 )
+                              case Auth_2_Srv_send_response
+                              solve( !KU( ~new_nonce.1 ) @ #vk.19 )
+                                case Auth_2_Srv_send_response
+                                solve( !KU( mac(<('1'+'1'+'1'), access_type_2>, ~n) ) @ #vk.22 )
+                                  case Auth_1_Gw_send_challenge
+                                  SOLVED // trace found
+                                qed
+                              qed
+                            qed
+                          qed
+                        qed
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+next
+  case Auth_3_Gw_grant_access_case_2
+  by contradiction /* from formulas */
+next
+  case Auth_3_Gw_grant_access_case_3
+  by sorry
+qed
+
+lemma executable_gw_grant_reboot_grant:
+  exists-trace
+  "(((((∃ gw_id thread_id_1 thread_id_2 access_type_1 access_type_2
+          #i1 #i2 #j.
+         ((((A_gw_access_granted( gw_id, thread_id_1, access_type_1
+             ) @ #i1) ∧
+            (A_gw_rebooted( gw_id ) @ #j)) ∧
+           (A_gw_access_granted( gw_id, thread_id_2, access_type_2 ) @ #i2)) ∧
+          (#i1 < #j)) ∧
+         (#j < #i2)) ∧
+       (∀ gw_id session_keys_1 session_keys_2 #i1 #i2.
+         ((A_gw_paired( gw_id, session_keys_1 ) @ #i1) ∧
+          (A_gw_paired( gw_id, session_keys_2 ) @ #i2)) ⇒
+         (#i1 = #i2))) ∧
+      (∀ gw_id_1 gw_id_2 gw_id_3 tid_1 tid_2 tid_3 at_1 at_2 at_3 #i1 #i2
+         #i3.
+        (((A_Gw_issue_challenge( gw_id_1, tid_1, at_1 ) @ #i1) ∧
+          (A_Gw_issue_challenge( gw_id_2, tid_2, at_2 ) @ #i2)) ∧
+         (A_Gw_issue_challenge( gw_id_3, tid_3, at_3 ) @ #i3)) ⇒
+        (((#i1 = #i2) ∨ (#i2 = #i3)) ∨ (#i1 = #i3)))) ∧
+     (∀ gw_id #i1 #i2.
+       ((A_gw_rebooted( gw_id ) @ #i1) ∧ (A_gw_rebooted( gw_id ) @ #i2)) ⇒
+       (#i1 = #i2))) ∧
+    (¬(∃ gwid count #i. A_reveal_counter( gwid, count ) @ #i))) ∧
+   (¬(∃ gwid #i. A_reveal( gwid ) @ #i))"
+/*
+guarded formula characterizing all satisfying traces:
+"(∃ gw_id thread_id_1 thread_id_2 access_type_1 access_type_2 #i1
+    #i2 #j.
+   (A_gw_access_granted( gw_id, thread_id_1, access_type_1 ) @ #i1) ∧
+   (A_gw_rebooted( gw_id ) @ #j) ∧
+   (A_gw_access_granted( gw_id, thread_id_2, access_type_2 ) @ #i2)
+  ∧
+   (#i1 < #j) ∧ (#j < #i2)) ∧
+ (∀ gw_id session_keys_1 session_keys_2 #i1 #i2.
+   (A_gw_paired( gw_id, session_keys_1 ) @ #i1) ∧
+   (A_gw_paired( gw_id, session_keys_2 ) @ #i2)
+  ⇒
+   #i1 = #i2) ∧
+ (∀ gw_id_1 gw_id_2 gw_id_3 tid_1 tid_2 tid_3 at_1 at_2 at_3 #i1 #i2
+    #i3.
+   (A_Gw_issue_challenge( gw_id_1, tid_1, at_1 ) @ #i1) ∧
+   (A_Gw_issue_challenge( gw_id_2, tid_2, at_2 ) @ #i2) ∧
+   (A_Gw_issue_challenge( gw_id_3, tid_3, at_3 ) @ #i3)
+  ⇒
+   ((#i1 = #i2) ∨ (#i2 = #i3) ∨ (#i1 = #i3))) ∧
+ (∀ gw_id #i1 #i2.
+   (A_gw_rebooted( gw_id ) @ #i1) ∧ (A_gw_rebooted( gw_id ) @ #i2)
+  ⇒
+   #i1 = #i2) ∧
+ (∀ gwid count #i. (A_reveal_counter( gwid, count ) @ #i) ⇒ ⊥) ∧
+ (∀ gwid #i. (A_reveal( gwid ) @ #i) ⇒ ⊥)"
+*/
+simplify
+solve( !Gw_key_established( gw_id, <key_us, key_su> ) ▶₀ #i1 )
+  case Pairing
+  solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id_1,
+                        access_type_1, <count, access_type_1>
+         ) ▶₁ #i1 )
+    case Auth_1_Gw_send_challenge_case_1
+    solve( !Gw_key_established( $gw_id, <key_us, key_su> ) ▶₀ #i2 )
+      case Pairing
+      solve( St_gw_pending( $gw_id, <~n, ~n.1>, thread_id_2,
+                            access_type_2, <count, access_type_2>
+             ) ▶₁ #i2 )
+        case Auth_1_Gw_send_challenge_case_1
+        by sorry
+      next
+        case Auth_1_Gw_send_challenge_case_2
+        solve( A_gw_challenge_clear( $gw_id, ~n.2 ) @ #k )
+          case Auth_3_Gw_grant_access
+          solve( !Gw_key_established( $gw_id, <key_us, key_su> ) ▶₀ #k )
+            case Pairing
+            solve( St_gw_pending( $gw_id, <~n, ~n.1>, ~n.2, access_type,
+                                  <count, access_type>
+                   ) ▶₁ #k )
+              case Auth_1_Gw_send_challenge
+              solve( A_gw_challenge_clear( $gw_id, ~n.2 ) @ #j.1 )
+                case Auth_3_Gw_grant_access
+                solve( !Gw_key_established( $gw_id, <key_us, key_su> ) ▶₀ #j.1 )
+                  case Pairing
+                  solve( St_gw_pending( $gw_id, <~n, ~n.1>, ~n.2, access_type.1,
+                                        <count, access_type.1>
+                         ) ▶₁ #j.1 )
+                    case Auth_1_Gw_send_challenge
+                    solve( !KU( mac(<new_server_nonce, 
+                                     mac(<('1'+'1'), access_type>, ~n)>,
+                                    ~n.1)
+                           ) @ #vk.5 )
+                      case Auth_2_Srv_send_response
+                      solve( !KU( mac(<new_server_nonce, 
+                                       mac(<('1'+'1'+'1'+z), access_type_2>, ~n)>,
+                                      ~n.1)
+                             ) @ #vk.8 )
+                        case Auth_2_Srv_send_response_case_02
+                        solve( !Gw_req_counter( $gw_id, ('1'+'1'+z) ) ▶₀ #j )
+                          case Increment_counter
+                          solve( Srv_counter( $srv_id, $gw_id, <~n, ~n.1>, '1' ) ▶₂ #vr.4 )
+                            case Pairing
+                            solve( Srv_counter( $srv_id, $gw_id, <~n, ~n.1>, z ) ▶₂ #vr.7 )
+                              case Auth_2_Srv_send_response
+                              solve( !KU( mac(<(srv_count+u), access_type.1>, ~n) ) @ #vk.29 )
+                                case Auth_1_Gw_send_challenge_case_1
+                                solve( !Gw_req_counter( $gw_id, ('1'+'1'+'1') ) ▶₀ #vr.10 )
+                                  case Increment_counter
+                                  solve( Srv_counter( $srv_id, $gw_id, <~n, ~n.1>, '1' ) ▶₂ #vr.11 )
+                                    case Pairing
+                                    solve( !Gw_req_counter( $gw_id, ('1'+'1') ) ▶₀ #vr.13 )
+                                      case Register_gw
+                                      solve( !KU( ~new_nonce ) @ #vk.10 )
+                                        case Auth_2_Srv_send_response
+                                        solve( !KU( ~new_nonce.1 ) @ #vk.11 )
+                                          case Auth_2_Srv_send_response
+                                          solve( !KU( mac(<('1'+'1'+'1'+'1'+'1'), access_type_2>,
+                                                          ~n)
+                                                 ) @ #vk.24 )
+                                            case Auth_1_Gw_send_challenge
+                                            SOLVED // trace found
+                                          qed
+                                        qed
+                                      qed
+                                    qed
+                                  qed
+                                qed
+                              qed
+                            qed
+                          qed
+                        qed
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      next
+        case Auth_1_Gw_send_challenge_case_3
+        by sorry
+      qed
+    qed
+  next
+    case Auth_1_Gw_send_challenge_case_2
+    by contradiction /* cyclic */
+  next
+    case Auth_1_Gw_send_challenge_case_3
+    by sorry
+  qed
+qed
+
+/* All well-formedness checks were successful. */
+
+end

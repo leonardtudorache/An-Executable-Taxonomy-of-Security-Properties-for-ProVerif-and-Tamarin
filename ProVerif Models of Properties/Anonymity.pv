@@ -1,0 +1,27 @@
+(* Anonymity protocol model *)
+free c: channel.
+type key.
+
+free k: key [private].
+free p_id: bitstring [private].
+
+(* Cryptographic primitives *)
+fun enc(bitstring, key): bitstring.
+reduc forall x:bitstring, y:key; dec(enc(x,y),y) = x.
+
+  
+(* Anonymity query *)
+query attacker(p_id).
+
+let P(p_id: bitstring) = 
+    new m: bitstring;
+    let m_enc = enc((m, p_id), k) in
+    out(c, m_enc).
+
+let Q() = 
+    in(c, enc_msg: bitstring);
+    let (m: bitstring, new_id: bitstring) = dec(enc_msg, k) in
+    0.
+
+process
+  P(p_id) | Q()

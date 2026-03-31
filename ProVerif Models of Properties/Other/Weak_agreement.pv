@@ -1,0 +1,32 @@
+free c : channel.
+
+type pkey.
+type skey.
+
+fun pk(skey): pkey.
+fun encrypt(bitstring, pkey): bitstring.
+reduc forall x: bitstring, y: skey; decrypt(encrypt(x,pk(y)),y) = x.
+
+event begin_A().
+event end_B().
+
+query event(end_B()) ==> event(begin_A()).
+
+let A(skA: skey, pkB: pkey)= 
+    event begin_A();
+    new na: bitstring;
+
+    let msg = encrypt(na, pkB) in
+    out(c, msg).
+
+let B(skB: skey, pkA: pkey) =
+    in(c, x: bitstring);
+    let na = decrypt(x, skB) in
+    event end_B().
+
+process
+    new skA: skey;
+    new skB: skey;
+    let pkA = pk(skA) in
+    let pkB = pk(skB) in
+  (!A(skA, pkB) | !B(skB, pkA))

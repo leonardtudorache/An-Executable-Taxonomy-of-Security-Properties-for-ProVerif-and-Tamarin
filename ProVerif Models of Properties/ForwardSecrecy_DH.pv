@@ -1,0 +1,73 @@
+set traceDisplay = long.
+
+type G.
+type exponent.
+type key.
+type skey.
+type pkey.
+channel c.
+
+const g: G [data].
+fun exp(G, exponent): G.
+fun pk(skey): pkey.
+
+equation forall x: exponent, y: exponent;
+  exp(exp(g, x), y) = exp(exp(g, y), x).
+
+fun group2key(G): key [typeConverter].
+fun enc(bitstring, key): bitstring.
+
+fun sign(G, skey): G.
+
+reduc forall m: bitstring, k: key;
+  dec(enc(m, k), k) = m.
+
+reduc forall m: G, sk: skey;
+  checksign(sign(m, sk), pk(sk)) = m.
+
+(* Secret message *)
+free m: bitstring [private].
+
+query attacker(m).
+
+event PSendsMessage(key).
+event QReceivesMessage(key).
+
+query k: key;
+  event(QReceivesMessage(k)).
+
+query k: key;
+  inj-event(QReceivesMessage(k)) ==> inj-event(PSendsMessage(k)).
+
+let P(sk_p: skey, pk_q: pkey) =
+  new a: exponent;
+  let g_a = exp(g, a) in
+  let g_a_signed = sign(g_a, sk_p) in
+  out(c, g_a_signed);
+  in(c, g_b_signed: G);
+  let g_b = checksign(g_b_signed, pk_q) in
+  if g_b = g then 0 else (* Reject if g_b is just g *)
+    let k = group2key(exp(g_b, a)) in (* exp(exp(g, b), a) *)
+    event PSendsMessage(k);
+    (* Send an encrypted message with the new key *)
+    out(c, enc(m, k));
+    0.
+
+let Q(sk_q: skey, pk_p: pkey) =
+  in(c, g_a_signed: G);
+  let g_a = checksign(g_a_signed, pk_p) in
+  new b: exponent;
+  let g_b = exp(g, b) in
+  let g_b_signed = sign(g_b, sk_q) in
+  out(c, g_b_signed);
+  let k = group2key(exp(g_a, b)) in (* exp(exp(g, a), b) *)
+  in(c, m_enc: bitstring);
+  if dec(m_enc, k) = m then
+    event QReceivesMessage(k);
+  0.
+
+process
+  new sk_p: skey;
+  new sk_q: skey;
+  P(sk_p, pk(sk_q)) | Q(sk_q, pk(sk_p))
+  | phase 1; out(c, (sk_p, sk_q, g))

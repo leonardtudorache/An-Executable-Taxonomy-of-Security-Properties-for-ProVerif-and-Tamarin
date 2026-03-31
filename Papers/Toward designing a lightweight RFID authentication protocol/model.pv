@@ -1,0 +1,56 @@
+(****************** Declarations ******************) 
+(*-channels-*) 
+free ch: channel. 
+free sch0: channel [private]. 
+type Nonce. type TimeStamp. 
+(* Constants and Variables *) 
+free ID: bitstring [private]. 
+free K: bitstring [private]. 
+(* the shared key *) 
+free Knew: bitstring [private]. 
+(* Functions *) 
+fun XOR(bitstring, bitstring): bitstring. 
+fun ROT(bitstring,bitstring): bitstring. 
+fun Con(bitstring, bitstring): bitstring. 
+fun Xperz(bitstring, bitstring): bitstring.
+ fun Wt(bitstring): bitstring. 
+ (* Type Converter *) 
+ fun nonce2bitstring(Nonce): bitstring [data,typeConverter]. 
+ (*-equations-*) 
+ equation forall m: bitstring, n:bitstring; XOR(XOR(m,n),n)=m. 
+ event beginReader. 
+ event endReader. 
+ event beginTag. 
+ event endTag. 
+ weaksecret ID. 
+ query attacker(Knew). 
+ query inj-event(endReader)==>inj-event(beginReader). 
+ query inj-event(endTag)==>inj-event(beginTag). 
+ (* RFID Reader *) 
+ let pReader = 
+    new request: bitstring; 
+    new Rr: Nonce; 
+    event beginReader; 
+    let r = nonce2bitstring(Rr) in 
+    out (ch, (request, r)); 
+    in (ch, (M1: bitstring, n: bitstring)); 
+    let M1' = Xperz(XOR(ID, n), XOR(K, r)) in 
+    if M1' = M1 then let M2 = Xperz(XOR(M1', r), XOR(K, n)) in 
+    out (ch,(M2)); 
+    let kold =Knew in 
+    let Knewsp = Xperz(XOR(K, n), ROT(K, Wt(XOR(r, n)))) in 
+    let Knewdp = Xperz(XOR(K, n), ROT(K, Wt(XOR(r, n)))) in 
+    event endReader. (* RFID Tag *) 
+    let pTag = event beginTag;
+    in (ch, (request:bitstring, r:bitstring)); 
+    new nTag: Nonce; 
+    let n = nonce2bitstring(nTag) in 
+    let M1 = Xperz(XOR(ID, n), XOR(K, r)) in 
+    out (ch, (M1, n)); 
+    in (ch, (M2: bitstring));
+    let M2' = Xperz(XOR(M1, r), XOR(K, n)) in 
+    if M2' = M2 then let K = Xperz(XOR(K, n), ROT(K, Wt(XOR(r, n)))) in 
+    event endTag. 
+    
+(****************** process ******************) 
+process((!pTag)|(!pReader))

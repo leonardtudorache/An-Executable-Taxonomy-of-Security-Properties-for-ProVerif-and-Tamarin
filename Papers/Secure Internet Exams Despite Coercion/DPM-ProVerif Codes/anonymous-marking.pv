@@ -1,0 +1,139 @@
+(* Remark! protocol with Fix- Anonymous Marking.*)
+(* Honest NET and the two Candidates in the definition*)
+(* Dishonest Exam Authority, Examiners, and Co-Candidates *)
+(* Necessary hypotheses: Publishing pseudonyms in random order. *)
+(* To avoid false attacks and enable termination, we also need to seperate the keys of two candidates in the definition from the other candidates using special roles *)
+(*Result: No Attack *)
+
+
+free ch: channel.
+(*Public channels representing the bulletin-boards: NET publishes on bbn, and Exam Authority publishes on bba*)
+free bbn: channel.
+free bba: channel.
+
+free ans1:bitstring.
+free ans2:bitstring.
+
+type identity.
+type pkey.
+type skey.
+type coins.
+type role.
+
+(*Roles to identify the two honest Candidates*)
+free C1: role.
+free C2: role.
+
+(*Roles of the dishonest Candidates and Examiners*)
+free C: role.
+free E: role.
+
+table publickey(role, bitstring, pkey).
+
+
+(* Pseudonym *)
+fun pk(skey): pkey.
+fun pseudo_pub(pkey,bitstring):pkey.
+fun pseudo_priv(skey,bitstring):skey. 
+fun exp(bitstring):bitstring.
+
+reduc forall  k: skey, rce:bitstring; checkpseudo(pseudo_pub(pk(k),rce), pseudo_priv(k,exp(rce))) = true.
+
+(* El-Gamal Probabilistic Public key encryption *)
+fun int_encrypt(bitstring, pkey, coins): bitstring.
+fun decrypt(bitstring,skey):bitstring
+  reduc 
+    forall m: bitstring, k: skey, r:coins;  decrypt(int_encrypt(m,pk(k),r),k) = m
+    otherwise  forall m: bitstring, k: skey, r:coins, rce:bitstring;  decrypt(int_encrypt(m,pseudo_pub(pk(k),rce),r), pseudo_priv(k,exp(rce))) = m.
+
+letfun encrypt(x:bitstring, y:pkey)= new r:coins; int_encrypt(x,y,r).
+
+(* Signature *)
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; getmess(sign(m,k)) = m.
+fun checksign(bitstring, pkey):bitstring
+  reduc 
+     forall m: bitstring, k: skey; checksign(sign(m,k), pk(k)) = m
+     otherwise forall m: bitstring, k: skey, rce:bitstring; checksign(sign(m,pseudo_priv(k,exp(rce))),pseudo_pub(pk(k),rce)) = m.
+
+
+(*---------------Protocol-----------------*)
+
+(*----------NET-----------------*)
+let NETE(skN:skey, pkA:pkey, rc:bitstring) =
+in(ch, (R: role));
+if R = C || R = E then
+get publickey(=R, rx, pkX) in
+let hx = exp(rx) in
+let pseudo_X = pseudo_pub(pkX,rx) in 
+let spseX = sign ((pseudo_X, hx, R), skN) in 
+out(bbn, ( pseudo_X, hx, R, spseX));
+
+(*No Reveal RC here, as it will only be revealed after the end of the exam*)
+0.
+
+(*----------NET for the two honest Candidates-----------------*)
+
+let NETC (skN:skey, pkA:pkey) =
+get publickey(=C1, rx, pkX) in
+let hx = exp(rx) in
+let pseudo_X = pseudo_pub(pkX,rx) in 
+let spseX = sign ((pseudo_X, hx, C), skN) in 
+get publickey(=C2, rx2, pkX2) in
+let hx2 = exp(rx2) in
+let pseudo_X2 = pseudo_pub(pkX2,rx2) in 
+let spseX2 = sign ((pseudo_X2, hx2, C), skN) in 
+(*Pseudonyms of the two honest Candidates are published in random order.*)
+(out(bbn,  choice[ (pseudo_X, hx, C, spseX), ( pseudo_X2, hx2, C, spseX2) ] ) |
+out(bbn,  choice[(pseudo_X2, hx2, C, spseX2), (pseudo_X, hx, C, spseX) ] )).
+
+(*----------Candidate-----------------*)
+
+let Cand (skC:skey, pkA:pkey, pkN:pkey, ans:bitstring, rl:role) =
+(* Cand Registration *)
+in(bbn, (pseudo_C:pkey, hc:bitstring, r: role, spseC:bitstring));
+if (pseudo_C, hc, r) = checksign(spseC, pkN)  && r = rl  then 
+let priv_C = pseudo_priv(skC, hc) in 
+if checkpseudo(pseudo_C, priv_C) =true then 
+
+(* Examination *)
+in(bba, eques:bitstring);
+let (ques: bitstring, sques:bitstring) = decrypt(eques, priv_C) in
+if ques=checksign(sques, pkA) then
+let ca = (ques, ans, pseudo_C) in 
+let sca = sign(ca,priv_C) in 
+let eca = encrypt((ca, sca), pkA) in 
+out(ch, eca);
+in(bba, eca':bitstring);
+let (=ca, sca':bitstring) = decrypt(eca', priv_C) in 
+if (ques, ans, pseudo_C) = checksign(sca', pkA) then 0.
+
+
+
+
+(*----------Main-----------------*)
+process
+
+(*Products of the secret exponent values of the servers (represented by the NET): rc for the candidates and re for the examiners.*)
+new rc: bitstring;
+new re: bitstring;
+
+(*We assume one NET and one Exam Authority*)
+new skA: skey; let pkA = pk(skA) in out (ch, (pkA, skA)); 
+new skN: skey; let pkN = pk(skN) in out (ch, pkN); 
+
+(*Keys of the two honest Candidates*)
+new skC1: skey; let pkC1 = pk(skC1) in out (ch, pkC1);  insert publickey(C1, rc, pkC1); 
+new skC2: skey; let pkC2 = pk(skC2) in out (ch, pkC2);  insert publickey(C2, rc, pkC2);
+
+(* Honest Parties *)
+!(NETE(skN, pkA, rc)) | 
+!(NETC(skN, pkA)) |
+ ( Cand(choice[skC1, skC2], pkA, pkN, ans1, C) ) |
+ ( Cand(choice[skC2, skC1], pkA, pkN, ans2, C) ) |
+(* Dishonest Co-Candidates and Examiners *)
+!( new skC: skey; let pkC = pk(skC) in out (ch, (pkC, skC)); in(ch, ans:bitstring); insert publickey(C, rc, pkC)) |
+!( new skE: skey; let pkE = pk(skE) in out (ch, (pkE, skE)); in(ch, mark:bitstring); insert publickey(E, re, pkE))
+
+
+

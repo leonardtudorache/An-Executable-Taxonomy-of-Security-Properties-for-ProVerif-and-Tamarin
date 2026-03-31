@@ -1,0 +1,839 @@
+(* capsid.pv - Verification of the Verifiability and Traceability properties
+ * of the CAPSID protocol, to accompany:
+ *
+ *   Y. Li, J. Jin, and K. Levchenko. "CAPSID: A Private Session ID System
+ *   for Small UAVs." ACM CCS 2024. DOI: TBD.
+ *
+ * This model is not used to verify non-linkability, which is reflected in
+ * some aspects of the model. For example, we do not bother with F-cert
+ * commitment in the ledger: our model stores the F-cert in the ledger in the
+ * clear since we do not care about hiding the link between EOIDs and FOIDs.
+ * 
+ * Version history:
+ * 
+ * 2024-04-30 (Yueshen Li) ACM CCS submission version.
+ * 2024-05-13 (Kirill Levchenko) Revised version.
+ * 2024-08-07 (Kirill Levchenko) Added explicit ledger modeling.
+ * 
+ *)
+ 
+
+type secprpkey. (* symmetric encryption secret key *)
+type pubsigkey. (* asymmetric public signing key *)
+type secsigkey. (* asymmetric secret signing key *)
+
+(* The /pk/ function derives a public signing key from the secret key *)
+
+fun pk(secsigkey):pubsigkey.
+
+(* The tweakable block cipher is modeled using two functions. The /twenc0/
+ * function corresponds to a tweakable block cipher that prepends 0 to the
+ * input, and the /twenc1/ function corresponds to a tweakable block cipher
+ * that prepends 1 to the input, used in Sections 4.1 and 4.2 of the paper.
+ * The first argument to both functions is the secret key, followed by the
+ * tweak, followed by the plaintext. The output is the ciphertext.
+ *)
+
+fun twenc0(secprpkey, bitstring, bitstring): bitstring.
+fun twenc1(secprpkey, bitstring, bitstring): bitstring.
+
+(* The idenc let-function combines twenc0 and twenc1 to encrypt OIDs and UIDs
+ * into EOIDs and EUIDs, and to encrypt EOIDs and EUIDs into FOIDs and FUIDs.
+ * This definition is purely to simplify notation.
+ *)
+
+letfun idenc(k: secprpkey, i: bitstring, o: bitstring, u: bitstring) =
+	let eo: bitstring = twenc0(k, i, o) in
+	let eu: bitstring = twenc1(k, eo, u) in
+	(eo, eu).
+
+reduc forall k:secprpkey, i: bitstring, o: bitstring, u: bitstring;
+	iddec(k, i, twenc0(k, i, o), twenc1(k, twenc0(k, i, o), u)) =
+	(o, u).
+
+(* /ECSR/ constructs and /unECSR/ deconstructs an E-CSR. We do not model
+ * creating an E-CSR with a signature that does not match the public key.
+ * All users of the E-CSR are assumed to verify the signature, so our model
+ * makes it impossible to construct a E-CSR with an invalid signature.
+ * The /ECSR/ function corresponds to Eq. 1 in the paper. Note that we do not
+ * explicitly supply the public epoch signing key since it is derivable from
+ * the secret key.
+ * 
+ * ECSR(i,oid,uid,kue) means a E-CSR for epoch /i/, OID /oid/, and UID /uid/,
+ * containing the public key that corresponds to the secret key /kue/, all
+ * signed using /kue/.
+ *
+ * The /unECSR/ reduction extracts elements of an E-CSR into a tuple.
+ *)
+
+fun ECSR (
+	bitstring, (* epoch *)
+	bitstring, (* OID *)
+	bitstring, (* UID *)
+	secsigkey (* kue *)
+):bitstring.
+
+reduc forall i:bitstring, o:bitstring, u:bitstring, kue:secsigkey;
+	unECSR(ECSR(i,o,u,kue)) = (i,o,u,pk(kue)).
+
+(* The /ckECSR/ let-function models a validating version of unECSR. The only
+ * validation for a E-CSR is signature validation, which we assume is
+ * performed by all users, to ckECSR = unECSR.
+ *)
+
+letfun ckECSR(ecsr:bitstring) = unECSR(ecsr).
+
+(* /ECert/ constructs and /unECert/ deconstructs an E-cert. The /ECert/
+ * function corresponds to Eq. 3 in the paper.
+ *
+ * ECert(i,eoid,euid,pkue,kauth) means an E-cert for epoch /i/, EOID /eoid/,
+ * EUID /euid/, and UAV epoch public signing key /pkue/, all signed using the
+ * Authority signing key /kauth/.
+ *
+ * The /unECert/ reduction extracts elements of a ECert into a tuple without
+ * verification. This reduction is not used in the protocol; it is included
+ * for completeness.
+ *)
+
+fun ECert (
+	bitstring, (* epoch *)
+	bitstring, (* EOID *)
+	bitstring, (* EUID *)
+	pubsigkey, (* pkue *)
+	secsigkey (* kauth *)
+):bitstring.
+
+reduc
+	forall
+		i:bitstring, eo:bitstring, eu:bitstring,
+		pkue:pubsigkey, kauth:secsigkey;
+	unECert(ECert(i,eo,eu,pkue,kauth)) = (i, eo, eu, pkue).
+
+(* The /ckECert/ reduction verifies the signature on an E-cert and extracts
+ * the elements of the E-cert into a tuple. Signature verification is modeled
+ * by requiring that the signature verification public key passed to /ckECert/
+ * is syntactically derived from secret key kauth used to construct the E-cert
+ * using /ECert/.
+ *)
+
+reduc
+	forall
+		i:bitstring, eo:bitstring, eu:bitstring,
+		pkue:pubsigkey, kauth:secsigkey;
+	ckECert(pk(kauth), ECert(i,eo,eu,pkue,kauth)) = (i, eo, eu, pkue).
+
+(* /FCSR/ constructs and /unFCSR/ deconstructs an F-CSR. We do not model 
+ * creating a F-CSR with a UAV flight signing key signature that does not
+ * the match the enclosed UAV flight public signing key. All users are
+ * expected to verify this signature, so our model makes it syntactically
+ * impossible to construct a FCSR with an invalid signature. The /FCSR/
+ * function below corresponds to the Fcsr function defined by Eq. 5.
+ * 
+ * FCSR(ecert,kue,kuf) means an F-CSR containing E-cert /ecert/, signed using
+ * UAV epoch secret singing key /kue/ and then signed using the UAV flight
+ * signing secret key /kuf/. (The second signature, using /kuf/, is over the
+ * E-cert and signature using /kue/.)
+ *
+ * Note that it is possible to construct a F-CSR signed by a different UAV
+ * epoch signing key than the one whose public signing key is in the E-cert.
+ *
+ * The /unFCSR/ reduction extracts elements of the F-CSR (E-cert and UAV
+ * flight signing public key) into a tuple without verification. This
+ * reduction is not used in the protocol; it is included for completeness.
+ *)
+
+fun FCSR (
+	bitstring, (* E-cert *)
+	secsigkey, (* kue *)
+	secsigkey (* kuf *)
+):bitstring.
+
+reduc
+	forall
+		ecert:bitstring,
+		kue: secsigkey,
+		kuf: secsigkey;
+	unFCSR(FCSR(ecert, kue, kuf)) =
+	(ecert, pk(kuf)).
+
+(* The /ckFCSR/ reduction verifies an F-CSR and extacts its elements into a
+ * tuple. Specifically, the /ckFCSR/ reduction verifies two things:
+ *
+ * 1. The enclosed E-cert is signed using the Authority public key passed as
+ *    the first argument to the reduction.
+ * 2. The F-CSR is signed using the UAV epoch signing key that corresponds to
+ *    the signing public key in the enclosed E-cert.
+ * 
+ * Recall that it is syntactically impossible, in our model, to construct an
+ * F-CSR signed using a UAV flight signing secret key that does not match the
+ * flight singing public key in the F-CSR.
+ *)
+
+reduc
+	forall
+		kauth:secsigkey,
+		kue:secsigkey,
+		kuf:secsigkey,
+		i:bitstring,
+		eo:bitstring,
+		eu:bitstring,
+		kae:secprpkey;
+	ckFCSR(pk(kauth), FCSR(ECert(i,eo,eu,pk(kue),kauth), kue, kuf)) =
+	(ECert(i, eo, eu, pk(kue), kauth), pk(kuf)).
+
+(* /ckFCSR_buggy/ is a version ckFCSR that does not check that the signature
+ * made using UAV epoch signing key is valid. This allows an attacker who
+ * observes an E-cert of another user to obtain F-certs that trace back to
+ * that user. Search for the string "EXPERIMENT 1" below.
+ *)
+
+reduc
+	forall
+		kauth:secsigkey,
+		kue:secsigkey,
+		kuf:secsigkey,
+		i:bitstring,
+		eo:bitstring,
+		eu:bitstring,
+		kae:secprpkey,
+		pkue:pubsigkey;
+	ckFCSR_buggy(pk(kauth), FCSR(ECert(i,eo,eu,pkue,kauth), kue, kuf)) =
+	(ECert(i, eo, eu, pkue, kauth), pk(kuf)).
+
+(* /FCert/ constructs and /unFCert/ deconstructs an F-cert. The /FCert/
+ * function corresponds to Eq. 6 in the paper.
+ *
+ * FCert(i,foid,fuid,pkuf,kcust) means an F-cert for epoch /i/, FOID /foid/,
+ * FUID /fuid/, and UAV flight public signing key /pkue/, all signed using the
+ * Custodian signing key /kcust/.
+ *
+ * The /unFCert/ reduction extracts elements of a FCert into a tuple without
+ * verification. This reduction is not used in the protocol; it is included
+ * for completeness.
+ *)
+
+fun FCert (
+	bitstring, (* epoch *)
+	bitstring, (* FOID *)
+	bitstring, (* FUID *)
+	pubsigkey, (* pkuf *)
+	secsigkey  (* kcust *)
+):bitstring.
+
+reduc
+	forall
+		kcust:secsigkey,
+		i:bitstring, fo:bitstring, fu:bitstring,
+		pkuf:pubsigkey;
+	unFCert(FCert(i,fo,fu,pkuf,kcust)) = (i,fo,fu,pkuf).
+
+(* The /ckFCert/ reduction verifies an F-cert and extracts its elements into
+ * a tuple. Specifically, it verifies that the F-cert is signed by a Custodian
+ * signing secret key associated with the public key provided as the first
+ * argument to the reduction.
+ *)
+
+reduc
+	forall
+		kcust:secsigkey,
+		i:bitstring, fo:bitstring, fu:bitstring,
+		pkuf:pubsigkey;
+	ckFCert(pk(kcust), FCert(i,fo,fu,pkuf,kcust)) = (i,fo,fu,pkuf).
+
+(* /BCast/ constructs and /unBCast/ deconstructs a broadcast.
+ * 
+ * BCast(kuf,fcert,msg) means a broadcast containing F-cert /fcert/ and
+ * message /msg/, all signed using UAV flight signing secret key /kuf/.
+ *
+ * the /unBCast/ reduction extracts the elements of the broadcast without
+ * verification. This reduction is unused in the protocoll; it is included for
+ * completeness.
+ *)
+
+fun BCast (
+	secsigkey, (* kuf *)
+	bitstring, (* fcert *)
+	bitstring  (* msg *)
+):bitstring.
+
+reduc
+	forall
+		kuf:secsigkey,
+		fcert:bitstring,
+		msg:bitstring;
+	unBCast(BCast(kuf, fcert, msg)) = (fcert, msg).
+
+(* The /ckBCast/ reduction verifies a broadcast and extracts its elements into
+ * a tuple. Specifically, the /ckFCSR/ reduction verifies two things:
+ *
+ * 1. The enclosed F-cert is signed using the Custodian public key passed as
+ *    the first argument to the reduction.
+ * 2. The broadcast is signed using the UAV flight signing key that
+ *    corresponds to the signing public key in the enclosed F-cert.
+ *)
+
+reduc
+	forall
+		kcust:secsigkey,
+		kuf:secsigkey,
+		i:bitstring, fo:bitstring, fu:bitstring,
+		msg:bitstring;
+	ckBCast(pk(kcust), BCast(kuf,FCert(i,fo,fu,pk(kuf),kcust),msg)) = 
+	(FCert(i,fo,fu,pk(kuf),kcust),msg).
+
+(* We have three public channels. The channel /ether/ models all radio
+ * communications, which happen in the clear. An attacker has full control of
+ * this channel.
+ *
+ * The /cmdch/ channel is used to model a powerful attacker. Specifically, we
+ * allow an attacker to cause each operator to obtain an F-cert and use the
+ * F-cert to make broadcasts. See the description of the /OPER/ oeprator
+ * process below.
+ * 
+ * The /atkch/ channel is used to provide the attacker with additional
+ * information, such as the Authority and Custodian public keys.
+ *)
+ 
+channel ether.
+channel cmdch.
+channel atkch.
+
+(* Ledger *)
+
+table ledger (
+	bitstring, (* epoch *)
+	bitstring, (* EOID *)
+	bitstring, (* EUID *)
+	bitstring  (* F-cert *)
+).
+
+channel lgrch.
+
+event ledger_received(bitstring,bitstring,bitstring,bitstring).
+event ledger_inserted(bitstring,bitstring,bitstring,bitstring).
+
+let LEDGER =
+	in(lgrch, (i:bitstring, eo:bitstring, eu:bitstring, fcert:bitstring));
+	event ledger_received(i, eo, eu, fcert);
+	insert ledger(i, eo, eu, fcert);
+	event ledger_inserted(i, eo, eu, fcert);
+	out(atkch, (i, eo, eu, fcert)). (* attacker can see ledger *)
+
+(* The Authority process takes a secret signing key /kauth/ (k^Auth), a
+ * tweakable block cipher key /kae/ (k^AE), an operator identifier /oid/, and
+ * a channel /ch/ to that operator. It services requests for E-certs from that
+ * operator received on the provided channel. A request must be in the form of
+ * an E-CSR from operator with OID /oid/. The E-CSR signature must verify
+ * using the key in the E-CSR.
+ * 
+ * The Authority generates the following events:
+ * 
+ *   - auth_ecsr_received(ecsr: bitstring) when it receives an E-CSR,
+ *   - auth_ecsr_accepted(ecsr: bitstring) when it accepts the E-CSR as valid,
+ *   - auth_ecert_issued(oid: bitstring, u: bitstring, ecert: bitstring) when
+ *     it issues an E-cert /ecert/ to operator /oid/ for UAV /u/.
+ *
+ * Note that each instance of the Authority process is bound to a specific
+ * operator, identifed by /oid/, and will only accept E-CSRs from that OID.
+ * 
+ * The operator-authority channel models a mutually-authenticated secure
+ * connection, for example a TLS connection in which the client (operator)
+ * verifies the authority X.509 certificate, and the client authenticates to
+ * the server using a password.
+ * 
+ * In response to a valid E-CSR from the operator, the Authority sends back
+ * the E-CSR and the E-cert issued for the E-CSR. The original E-CSR is
+ * included to allow the operator to match E-certs to E-CSRs. In practice,
+ * this is not necessary, as the requests would be searialized. In our model,
+ * multiple requests are modelled using parallel processes.
+ *)
+
+event auth_ecsr_received(bitstring).
+event auth_ecsr_accepted(bitstring).
+event auth_ecert_issued(bitstring,bitstring,bitstring).
+
+let AUTH(kauth:secsigkey, kae:secprpkey, oid:bitstring, ch:channel) =
+	in(ch, ecsr:bitstring);
+	event auth_ecsr_received(ecsr);
+	let (i:bitstring, =oid, u:bitstring, pkue:pubsigkey) = ckECSR(ecsr) in
+	event auth_ecsr_accepted(ecsr);
+	let (eo:bitstring, eu:bitstring) = idenc(kae, i, oid, u) in
+	let ecert = ECert(i, eo, eu, pkue, kauth) in
+	event auth_ecert_issued(oid, u, ecert);
+	out(ch,(ecsr,ecert)).
+
+(* The Custodian process takes a secret signing key /kcust/ (k^Cust), a
+ * tweakable block cipher key /kcf/ (k^CF), a channel /ch/ for receiving
+ * requests, and an Authority signing public key /pkauth/. It services
+ * requests for F-certs from the channel. A request must be in the form of
+ * an F-CSR. If the F-CSR is valid, the Custodian sends back a F-cert.
+ * 
+ * The Custodian generates the following events:
+ * 
+ *   - cust_fcsr_received(ecsr: bitstring) when it receives an F-CSR,
+ *   - cust_fcsr_accepted(ecsr: bitstring) when it accepts the F-CSR as valid,
+ *   - cust_fcert_issued(eo: bitstring, eu: bitstring, fcert: bitstring) when
+ *     it issues an F-cert /fcert/ to operator with EOID /eo/ for UAV with
+ *     EUID /u/.
+ * 
+ * In response to a valid F-CSR, the Custodian sends back the F-CSR and the
+ * F-cert issued for the F-CSR. The original F-CSR is included to allow the
+ * receiver to match F-certs to F-CSRs. In practice, this is not necessary, as
+ * the requests would be searialized. In our model, multiple requests are
+ * modeled using parallel processes.
+ *)
+
+event cust_fcsr_received(bitstring).
+event cust_fcsr_accepted(bitstring).
+event cust_fcert_issued(bitstring,bitstring,bitstring).
+
+let CUST(kcust:secsigkey, kcf:secprpkey, ch:channel, pkauth:pubsigkey) =
+	in(ch, fcsr:bitstring);
+	event cust_fcsr_received(fcsr);
+	
+	(* EXPERIMENT 1. Replace ckFCSR with ckFCSR_buggy bellow to use a
+	 * deconstructor that does not check the signature made using k^UE on the
+	 * F-CSR. This, and leaking the E-cert to the attacker, allows the
+	 * attacker to create a F-cert that traces to another user.
+	 *)
+	
+	let (ecert:bitstring, pkuf:pubsigkey) =
+		ckFCSR(pkauth,fcsr) in (* EXPERIMENT 1: try ckFCSR_buggy instead *)
+
+	let (i:bitstring, eo:bitstring, eu:bitstring, _:pubsigkey) =
+		ckECert(pkauth, ecert) in
+	event cust_fcsr_accepted(fcsr);
+	let (fo:bitstring, fu:bitstring) = idenc(kcf, i, eo, eu) in
+	let fcert = FCert(i,fo,fu,pkuf,kcust) in
+	
+	event cust_fcert_issued(eo,eu,fcert);
+	out(lgrch, (i, eo, eu, fcert));
+	out(ch,(fcsr,fcert)).
+
+(* The operator process takes an OID /oid/, an Authority signing public key
+ * /pkauth/, a Custodian signing public key /pkcust/, a channel to the
+ * Authority /authch/, and a channel to the Custodian /custch/. It generates
+ * pair of signing secret keys /kue/ and /kuf/ for signing E-CSRs and F-CSRs.
+ * It then splits into parallel sub-processes. Each parallel sub-process
+ * listens for commands on global command channel /cmdch/, which is available
+ * to the attacke. The commands consist of a pair /(i,u)/, which causes that
+ * operator sub-process to obtain an F-Cert for epoch /i/ and UID /u/.  The
+ * operator than continuously broadcasts messages on global channel /ether/.
+ * 
+ * The operator generates the following events:
+ * 
+ *   - op_spawned(oid: bitstring) when it is first created,
+ *   - op_cmd_received(i: bitstring, u: bitstring) when it receives a command
+ *     on /cmdch/ to create an F-cert for epoch /i/ and UID /u/,
+ *   - op_ecsr_sent(oid: bitstring, ecsr: bitstring) when it sends an E-CSR
+ *     to the Authority on channel /authch/,
+ *   - op_ecert_received(oid: bitstring, ecsr: bitstring) when it receives
+ *     and E-cert from the Authority,
+ *   - op_fcsr_sent(oid: bitstring, fcsr: bitstring) when it sends an F-CSR
+ *     to the Custodian on channel /authch/,
+ *   - op_fcert_received(oid: bitstring, fcsr: bitstring) when it receives
+ *     and F-cert from the Custodian, and
+ *   - op_msg_sent(oid: bitstring, fcert: bitstring, msg: bitstring) when it
+ *     sends a broadcast message /msg/ with F-cert /fcert/ on channel /ether/.
+ *)
+
+event op_spawned(bitstring).
+event op_cmd_received(bitstring, bitstring).
+event op_ecsr_sent(bitstring, bitstring).
+event op_ecert_received(bitstring, bitstring).
+event op_fcsr_sent(bitstring, bitstring).
+event op_fcert_received(bitstring, bitstring).
+event op_fcert_accepted(bitstring, bitstring).
+event op_msg_sent(bitstring,bitstring,bitstring).
+
+let OP (
+	oid:bitstring,
+	pkauth:pubsigkey,
+	pkcust:pubsigkey,
+	authch:channel,
+	custch:channel
+) =
+	new kue:secsigkey;
+	new kuf:secsigkey;
+	event op_spawned(oid);
+	! (
+		in(cmdch, (i:bitstring, u:bitstring));
+		event op_cmd_received(oid,(i,u));
+		let ecsr = ECSR(i,oid,u,kue) in
+		event op_ecsr_sent(oid,ecsr);
+		out(authch, ecsr);
+		in(authch, (=ecsr, ecert:bitstring));
+		let (=i, eo:bitstring, eu:bitstring, =pk(kue)) =
+			ckECert(pkauth, ecert) in
+		event op_ecert_received(oid,ecert);
+		
+		(* Leak E-cert to attacker. Normally, an unprivileged attacker would
+		 * not see E-certs issued to other operators.
+		 *)
+		 
+		out(atkch, ecert);
+		
+		let fcsr = FCSR(ecert,kue,kuf) in
+		event op_fcsr_sent(oid,fcsr);		
+		out(custch, fcsr);
+		in(custch, (=fcsr, fcert:bitstring));
+		let(=i, _:bitstring, _:bitstring, =pk(kuf)) =
+			ckFCert(pkcust, fcert) in
+		event op_fcert_received(oid,fcert);
+		(* wait for fcert to appear in ledger *)
+		get ledger(=i, =eo, =eu, =fcert) in
+		event op_fcert_accepted(oid,fcert);
+		
+		(* Make broadcasts *)
+		! (
+			new msg:bitstring;
+			event op_msg_sent(oid,fcert,msg);
+			out(ether, BCast(kuf,fcert,msg));
+			0
+		)
+	)
+.
+
+(* The unprivileged receiver process RCVR takes a Custodian signing public
+ * key /pkcust/ and listens for broadcasts on global channel /ether/. It
+ * generates the following events:
+ * 
+ *   - rcvr_bcast_received(bcast: bitstring) when it receives a broadcast, and
+ *   - rcvr_bcast_accepted(bcast: bitstring) when it accepts the broadcast.
+ *)
+
+event rcvr_bcast_received(bitstring).
+event rcvr_bcast_accepted(bitstring).
+
+let RCVR(pkcust: pubsigkey) =
+	in(ether, bcast:bitstring);
+	event rcvr_bcast_received(bcast);
+	let _:bitstring = ckBCast(pkcust, bcast) in
+	event rcvr_bcast_accepted(bcast)
+.
+
+(* The privileged receiver process UNSEAL models an Authority that unseals
+ * operator identities with the help of the Custodian. We model this by giving
+ * having the UNSEAL process decrypt FOIDs and FUIDs using the Custodian's
+ * secret key. (We do not model the process of the Custodian verifying that
+ * the unsealing reguest is legitimate, as this is outside the scope of the
+ * paper.) The UNSEAL process receives a broadcast and decrypts the FOID and
+ * FUID to get the EOID and EUID, and then again to get the OID and UID. It
+ * checks that the epoch, EOID, EUID, and F-cert combination appears in the
+ * ledger. if it does, the broadcast is considered unsealed.
+ * The UNSEAL process generates the following events:
+ * 
+ *   - unseal_bcast_received(bcast: bitstring) when a broadcast is received,
+ *   - unseal_bcast_traced(o: bitstring, u: bitstring, bcast: bitstring) when
+ *     broadcast /bcast/ has been traced to OID /o/ and UID /u/.
+ *)
+
+event unseal_bcast_received(bitstring).
+event unseal_bcast_traced(bitstring, bitstring, bitstring).
+
+let UNSEAL (
+	kae:secprpkey,
+	pkcust:pubsigkey,
+	kcf:secprpkey
+) =
+	in(ether, bcast:bitstring);
+	event unseal_bcast_received(bcast);
+	let (fcert:bitstring, msg:bitstring) = ckBCast(pkcust, bcast) in
+	let (i:bitstring, fo:bitstring, fu:bitstring, pkuf:bitstring) =
+		ckFCert(pkcust, fcert) in
+	let (eo:bitstring, eu:bitstring) = iddec(kcf, i, fo, fu) in
+	get ledger(=i, =eo, =eu, =fcert) in (* check ledger *)
+	let (o:bitstring, u:bitstring) = iddec(kae, i, eo, eu) in
+	event unseal_bcast_traced(o,u,bcast).
+	
+
+(* The OP_AUTH_CUST process combines an operator, Authority, and Custodian
+ * process and links them using shared channels. The attacker cannot see the
+ * contents of the channels or inject messages into the channels. The
+ * Authority process received the OID of the operator, and will only accept
+ * requests of the named operator.
+ *)
+
+let OP_AUTH_CUST (
+	oid: bitstring,
+	kauth:secsigkey,
+	kae:secprpkey,
+	kcust:secsigkey,
+	kcf:secprpkey
+) =
+	new authch: channel;
+	new custch: channel;
+	
+	(* EXPERIMENT 2: Uncomment the following line to leak the Custodian-
+	 * operator channel to the attacker. This, together with access to the
+	 * Custodian's secret keys, allows an attacker to impersonate the
+	 * Custodian in the Corrupt Custodian model. *)
+	 
+	(* out (atkch, custch); *)
+	
+	( AUTH(kauth, kae, oid, authch)
+	| CUST(kcust, kcf, custch, pk(kauth))
+	| OP(oid, pk(kauth), pk(kcust), authch, custch)
+	)
+.
+
+(* The following processes all use the free parameters below. The first four
+ * are secret keys of the Authorit and Custodian. The process definitions
+ * above took private keys as parameters. In the process definitions below,
+ * these parameters receive the unique keys a below.
+ *)
+
+free master_kauth:secsigkey [private].
+free master_kae:secprpkey [private].
+free master_kcust:secsigkey [private].
+free master_kcf:secprpkey [private].
+
+(* The RUN_LEDGER, RUN_UNSEAL, and RUN_RECEIVER processes run parallel
+ * instances for the LEDGER, UNSEAL, and RCVR processes with the appropriate
+ * master keys defined above.
+ *)
+
+let RUN_LEDGER =
+	!LEDGER.
+
+let RUN_UNSEAL =
+	!UNSEAL(master_kae, pk(master_kcust), master_kcf).
+
+let RUN_RECEIVER =
+	let pkcust = pk(master_kcust) in	
+	!RCVR(pkcust).
+
+(* The RUN_OPERATORS process creates distinct parallel OP_AUTH_CUST processes
+ * that use the global keys above.
+ *)
+
+let RUN_OPERATORS =
+	let kauth = master_kauth in
+	let kae = master_kae in
+	let kcust = master_kcust in
+	let kcf = master_kcf in
+	! (
+		new oid: bitstring;
+		OP_AUTH_CUST(oid, master_kauth, master_kae, master_kcust, master_kcf)
+	)
+.
+
+(* The /target_oid/ is a free parameter, visible to the attacker, representing
+ * the OID of a distinguished operator. one of the attacker's goals is to
+ * impersonate this distinguished operator, that is, to generate a broadcast
+ * attributed to the distinguished operator that the distinguished operator
+ * did not actually send.
+ *)
+
+free target_oid:bitstring.
+
+(* The RUN_TARGETS process is like the RUN_OPERATORS process, but it creates
+ * the distinguished operator process.
+ *)
+
+let RUN_TARGETS =
+	let kauth = master_kauth in
+	let kae = master_kae in
+	let kcust = master_kcust in
+	let kcf = master_kcf in
+	OP_AUTH_CUST(target_oid, kauth, kae, kcust, kcf)
+.
+
+(* The RUN_ATK_AUTH process models the attacker's ability to create multiple
+ * fictitious OIDs (distinct from the distinguished user or any other OIDs)
+ * and request E-certs on their behalf. It does this by creating a OID and
+ * a trusted channel between that OID and the Authority, and then providing
+ * both OID and Authority channel to the attacker.
+ *)
+
+let RUN_ATK_AUTH =
+	let kauth = master_kauth in
+	let kae = master_kae in
+	! (
+		new oid: bitstring;
+		new authch: channel;
+		out(atkch,(oid,authch));
+		AUTH(kauth, kae, oid, authch)
+	)
+.
+
+(* The RUN_ATK_CUST gives the attacker unlimited interactions with the
+ * Custodian, which it can use to create F-certs.
+ *)
+
+let RUN_ATK_CUST =
+	let pkauth = pk(master_kauth) in
+	let kcust = master_kcust in
+	let kcf = master_kcf in
+	! (
+		new custch: channel;
+		out(atkch, custch);
+		CUST(kcust, kcf, custch, pkauth)
+	)
+.
+
+(* The following query checks that a broadcast can be accepted. This is a
+ * sanity check to make sure that we have not created a protocol that is only
+ * secure because it does not allow anything to happen.
+ *)
+
+query
+	bcast:bitstring;
+	event(rcvr_bcast_accepted(bcast)).
+
+(* The following query checks that a broadcast from the distinguished operator
+ * can be send sent and accepted. This is also a sanity check.
+ *)
+
+query
+	kuf: secsigkey,
+	fcert: bitstring,
+	msg: bitstring;
+	event(op_msg_sent(target_oid, fcert, msg)) &&
+	event(rcvr_bcast_accepted(BCast(kuf, fcert, msg))).
+
+(* The following query checks that a broadast from the distinguished operator
+ * can be unsealed. This is also a sanity check.
+ *)
+ 
+query
+	kuf: secsigkey,
+	msg: bitstring,
+	fcert: bitstring,
+	u: bitstring;
+	let bcast = BCast(kuf, fcert, msg) in
+	event(op_msg_sent(target_oid, fcert, msg)) &&
+	event(unseal_bcast_traced(target_oid, u, bcast)).
+
+(* QUERY 1: Verifiable broadcasts
+ *
+ * The following query encodes the claim that if a broadcast is accepted by a
+ * receiver, then:
+ *    (a) The Custodian issued the F-cert contained in the broadcast,
+ *    (b) The Authority issued an E-cert with and EOID and EUID that encrypt
+ *        to the FOID and FUID in the F-cert contained in the broadcast,
+ *    (c) The E-cert was issued to an operator whose OID encrypts to EOID, and
+ *    (d) The E-cert was issued for a UAV the OID of which encrypts to EUID.
+ *
+ * This means that every accepted broadcast is traceable to an operator. This
+ * query will fail in EXPERIMENT 2 (Corrupt Custodian).
+ *)
+
+query
+	kuf: secsigkey,
+	fcert: bitstring,
+	msg: bitstring,
+	ecert: bitstring,
+	i:bitstring,
+	fo:bitstring,
+	fu:bitstring,
+	eo:bitstring,
+	eu:bitstring,
+	o:bitstring,
+	u:bitstring,
+	kue: secsigkey,
+	kcust: secsigkey,
+	kauth: secsigkey;
+	event(rcvr_bcast_accepted(BCast(kuf,fcert,msg)))
+	==>
+	ecert = ECert(i,eo,eu,pk(kue),master_kauth) &&
+	fcert = FCert(i,fo,fu,pk(kuf),master_kcust) &&
+	twenc0(master_kae,i,o) = eo &&
+	twenc1(master_kae,eo,u) = eu &&
+	twenc0(master_kcf,i,eo) = fo &&
+	twenc1(master_kcf,fo,eu) = fu &&
+	event(cust_fcert_issued(eo,eu,fcert)) &&
+	event(auth_ecert_issued(o,u,ecert))
+.
+
+
+(* QUERY 2: Traceable broadcasts
+ *
+ * The following query encodes the following:
+ * If a broadcast is accepted by a receiver and that broadcast traces to the
+ * distinguished operator, then that broadcast was indeed sent by the
+ * distinguished operator.
+ * 
+ * This means that the attacker cannot impersonate the distinguished
+ * operator. This query will fail in EXPERIMENT 2 (Corrupt Custodian).
+ *)
+
+query
+	kuf: secsigkey,
+	pkuf: pubsigkey,
+	kcust: secsigkey,
+	msg: bitstring,
+	i: bitstring,
+	u: bitstring;
+	let eo = twenc0(master_kae, i, target_oid) in
+	let eu = twenc1(master_kae, eo, u) in
+	let fo = twenc0(master_kcf, i, eo) in
+	let fu = twenc1(master_kcf, fo, eu) in
+	let fcert = FCert(i, fo, fu, pkuf, kcust) in
+	event(rcvr_bcast_accepted(BCast(kuf, fcert, msg)))
+	==>
+	event(op_msg_sent(target_oid, fcert, msg))
+.
+
+(* QUERY 3: Impersonation-resistant broadcasts
+ * 
+ * The following query encodes the following:
+ * If a broadcast is traced to an operator, and that operator had accepted
+ * the F-cert used in the broadcast, then that operator must have sent the
+ * broadcast. This query is useful to testing the Corrupt Custodian model in
+ * EXPERIMENT 2. This query should always be true.
+ * 
+ * We do not model an operator monitoring the ledger for certificates issued
+ * on her EOID. Instead, we consider an F-cert valid for tracing purposes, if
+ * it has been accepted by the operator at some point. We assume that all
+ * oeprators monitor the ledger and report a problem if they see their EOID
+ * with a certificate they did not request.
+ *
+ * A broadcast is considered traced if it can be decrypted to an OID and UID.
+ * This does not allow an attack where the operator returns a fictitious EOID
+ * and EUID that do not decrypt to a real operator's OID and UID. Such an
+ * attack is considered an attack on Verifiability, and not impersonation.
+ * 
+ * A corrupt Custodian has no way of learning a real operator's EOID before
+ * an E-cert is issued for the operator. However, if there is an operator to
+ * receive an E-cert, we assume that operator will monitor the ledger for
+ * other occurences of her EOID.
+ *)
+
+query
+	i: bitstring,
+	o: bitstring,
+	u: bitstring,
+	fcert: bitstring,
+	msg: bitstring,
+	kuf: secsigkey;
+
+	let bcast = BCast(kuf, fcert, msg) in
+	let eo = twenc0(master_kae, i, o) in
+	let eu = twenc1(master_kae, eo, u) in
+	event(unseal_bcast_traced(o,u,bcast)) &&
+	event(op_fcert_accepted(o, fcert))
+	==>
+	event(op_msg_sent(o, fcert, msg))
+.
+
+process
+	out(atkch, pk(master_kauth));
+	out(atkch, pk(master_kcust));
+	
+	(* EXPERIMENT 2. Uncomment the following two lines to provide the
+	 * Custodian's secret keys to the attacker. This, combined with leaking
+	 * the Custodian-operator channel to the attacker, simulates a corrupted
+	 * Custodian that can manipulate the certificates issued to operators.
+	 *)
+	
+	(* out(atkch, master_kcust); *)
+	(* out(atkch, master_kcf); *)
+	
+	RUN_LEDGER |
+	RUN_UNSEAL |
+	RUN_RECEIVER |
+	RUN_OPERATORS |
+	RUN_TARGETS |
+	RUN_ATK_AUTH |
+	RUN_ATK_CUST

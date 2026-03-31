@@ -1,0 +1,307 @@
+/*
+      
+    Protocol:    Tweetchain
+    Modeler:     Mariapia Raimondo
+    Date:        30 November 2020
+
+    Status:      Working...
+
+
+    Protocol description: 
+      Note: y is a generic user, as x
+            W is the Welcome page
+
+    protocol REGISTRATION {
+      1. x -> W: { HC(1,x), HC(1,W), Hello }
+
+      2. W -> x: { HC(i,W), Welcome, HC(1,x), TID(1,x) }
+
+      3. x -> y: { private_request }
+
+      4. y -> x: { HC(j,y), Welcome, HC(1,x) }
+
+    }
+
+*/
+
+theory Tweetchain_reg 
+begin
+
+builtins: hashing, asymmetric-encryption, signing
+
+//sign up rules, i.e., create_entity & reveal_ltk
+
+// W signs up to twitter 
+rule create_ent_W: 
+  let
+    pubk = pk(~ltk)
+    HC_1_W = h(~root_HC_W)
+  in
+
+    [ Fr(~id), Fr(~ltk), Fr(~root_HC_W) ]
+  --[ Gen_ent($W),
+      UniqueEnt($W) ]->
+    [ St_W_0($W, ~id, pubk, ~ltk, HC_1_W),
+      !Community_ID_W($W, ~id, pubk, HC_1_W),
+      !Ltk($W, ~ltk),
+      HC_W($W, <'empty', HC_1_W>), 
+      Out(<$W, ~id, pubk, HC_1_W>) ] 
+
+// entity signs up to twitter
+rule create_ent:
+  let
+    pubk = pk(~ltk)
+  in
+
+    [ Fr(~id), Fr(~ltk) ]
+  --[ Neq($W,$entity),
+      Gen_ent($entity),
+      UniqueEnt($entity) ]->
+    [ St_0($entity, ~id, pubk, ~ltk),
+      !Ltk($entity, ~ltk),
+      ID($entity, ~id, pubk),
+      Out(<$entity, ~id, pubk>) ]
+
+
+rule rev_ltk:
+  [ !Ltk(ent, ~ltk) ] --[ RevLtk(ent) ]-> [ Out(~ltk) ]
+
+
+// community joining rules, i.e., hello_tweet, welcome_tweet & community_joined
+
+
+// entity x sends hello tweet //(mandatory for each entity that wants to join the community)
+rule hel_twe:
+  let
+    HC_1_x = h(~root_HC_x)
+  in
+    [ St_0(x, id_x, pubk_x, ltk_x),
+      !Community_ID_W($W, id_W, pubk_W, HC_1_W),
+      Fr(~TID_1_x), Fr(~root_HC_x)
+       ]
+  --[ Neq(x,$W), 
+      HELLO_sent(x, $W),
+      UniqueHello(x) ]->
+    [ St_1(x, id_x, pubk_x, ltk_x, HC_1_x, 'HELLO_sent', ~TID_1_x),
+      HC(x, <'empty', HC_1_x>),
+      Out(< <x, HC_1_x, HC_1_W, 'Hello', $W, ~TID_1_x>, sign(<x, HC_1_x, HC_1_W, 'Hello', $W, ~TID_1_x>,ltk_x)>), 
+      Out(< <x,~TID_1_x>, sign(<x,~TID_1_x>,ltk_x)>) ] 
+
+// W receives hello tweet and sends welcome tweet
+rule welc_twe:
+  let
+    HC_new_W = h(HC_b_W)
+  in
+
+    [ In(< <x, HC_1_x, HC_1_W, 'Hello', $W, TID_1_x>, auth_msg>),
+      In(< <x, TID_1_x>, auth_msg2>),
+      St_W_0($W, id_W, pubk_W, ltk_W, HC_1_W),
+      HC_W($W, <HC_a_W, HC_b_W>),
+      ID(x, id_x, pubk_x) ]
+  --[ Eq( verify(auth_msg, <x, HC_1_x, HC_1_W, 'Hello', $W, TID_1_x>, pubk_x), true),
+      Eq( verify(auth_msg2, <x, TID_1_x>, pubk_x), true), 
+      HELLO_received(x, $W),
+      WELCOME_sent($W, x) ]->
+    [ St_W_1($W, id_W, pubk_W, ltk_W, HC_new_W, 'HELLO_received', 'WELCOME_sent'),
+      HC_W($W, <HC_b_W, HC_new_W>),
+      Out(< <$W, HC_new_W, 'Welcome', HC_1_x, TID_1_x, x>, sign(<$W, HC_new_W, 'Welcome', HC_1_x, TID_1_x, x>, ltk_W)>) ]
+
+// x receives welcome tweet from W
+rule comm_joined:
+
+    [ In(< <$W, HC_i_W, 'Welcome', HC_1_x, TID_1_x, x>, auth_msg>),
+      St_1(x, id_x, pubk_x, ltk_x, HC_1_x, 'HELLO_sent', TID_1_x),
+      !Community_ID_W($W, id_W, pubk_W, HC_1_W) ]
+  --[ Eq( verify(auth_msg, <$W, HC_i_W, 'Welcome', HC_1_x, TID_1_x, x>, pubk_W), true), 
+      WELCOME_received($W, x)]->
+    [ St_2(x, id_x, pubk_x, ltk_x, HC_1_x ,'WELCOME_received', TID_1_x), 
+      !Community_ID(x,id_x,pubk_x, HC_1_x) ]  
+
+
+// construction of verifiers' set rules, i.e., followership_request, follow_welcome_tweet, attestation_follow
+ 
+// TID chain generation
+rule TID_c:
+    [ Fr(~seed) ]
+  --[ TID_chain_gen(~seed) ]->
+    [ TID_chain(<'c', ~seed>),
+      Out(<'c', ~seed>) ]
+
+// x sends followership request to y
+rule foll_req:
+
+    [ St_2(x, id_x, pubk_x, ltk_x, HC_1_x ,'WELCOME_received', TID_1_x),
+      !Community_ID(y, id_y, pubk_y, HC_1_y) ]
+  --[ Neq(x,y),
+      PRIVATE_REQ_sent(x,y) ]->
+    [ St_x_1(x, id_x, pubk_x, ltk_x, HC_1_x ,'WELCOME_received', 'PRIVATE_REQ_sent', TID_1_x) ,
+      Out(< <x, y, aenc('follow_please',pubk_y)>, sign(<x, y, aenc('follow_please',pubk_y)>, ltk_x)>) ]
+
+// y receives the followership request and confirms the followership
+rule w_t:
+  let
+    HC_new_y = h(HC_b_y)
+  in
+    [ In(< <x, y, aenc('follow_please',pubk_y)>, auth_msg>),
+      In(< <x, TID_1_x>, auth_msg2>),
+      St_2(y, id_y, pubk_y, ltk_y, HC_1_y ,'WELCOME_received', TID_1_y),
+      !Community_ID(x, id_x, pubk_x, HC_1_x),
+      HC(y, <HC_a_y, HC_b_y>) ]
+  --[ Eq( verify(auth_msg, <x, y, aenc('follow_please',pubk_y)>, pubk_x), true),
+      Eq( verify(auth_msg2, <x, TID_1_x>, pubk_x), true),
+      PRIVATE_REQ_received(x,y),
+      FOLLOW_WELCOME_sent(y,x) ]->
+    [ St_y_1(y, id_y, pubk_y, ltk_y, HC_1_y, 'PRIVATE_REQ_received', 'FOLLOW_WELCOME_sent', TID_1_y),
+      HC(y, <HC_b_y, HC_new_y>),
+      Out(< <y, HC_new_y, 'Follow_Welcome', HC_1_x, TID_1_x, x>, sign(<y, HC_new_y, 'Follow_Welcome', HC_1_x, TID_1_x, x>, ltk_y) >)]
+
+// x receives the follow_welcome confirmation from y
+rule a_f:
+
+    [ In(< <y, HC_j_y, 'Follow_Welcome', HC_1_x, TID_1_x, x>, auth_msg>),
+      St_x_1(x, id_x, pubk_x, ltk_x, HC_1_x ,'WELCOME_received', 'PRIVATE_REQ_sent', TID_1_x) ,
+      !Community_ID(y, id_y, pubk_y, HC_1_y) ]
+  --[ Eq( verify( auth_msg, <y, HC_j_y, 'Follow_Welcome', HC_1_x, TID_1_x, x>, pubk_y), true),
+      FOLLOW_WELCOME_received(y,x) ]->
+    [ St_x_2(x, id_x, pubk_x, ltk_x, HC_1_x, 'FOLLOW_WELCOME_received', TID_1_x) ]
+
+
+
+restriction equality: "All x y #i. Eq(x,y) @ i ==> x = y" 
+restriction inequality: "All x #i. Neq(x,x) @ i ==> F"
+
+restriction UniqueEnt: "All x #i #j. UniqueEnt(x) @i & UniqueEnt(x) @j ==> #i=#j"
+
+
+// ---- existence lemmas ----
+
+#ifdef nottimed
+lemma reach_Gen: exists-trace
+  "Ex x #i. Gen_ent(x) @i"
+#endif
+
+#ifdef nottimed
+lemma reach_HELLO_s: exists-trace
+  "Ex x w #i. HELLO_sent(x, w) @i"
+#endif
+
+#ifdef nottimed 
+lemma reach_HELLO_r: exists-trace
+  "Ex x w #i. HELLO_received(x, w) @i"
+#endif
+
+#ifdef nottimed
+lemma reach_WELCOME_r: exists-trace
+  "Ex x w #i. WELCOME_received(w, x) @i"
+#endif
+
+// ---- traces lemmas ----
+
+// 
+#ifdef nottimed
+lemma fake_trace_HELLOs_Gen:  
+  "All x w #i. HELLO_sent(x,w) @i
+    ==>
+  Ex #j. (Gen_ent(x) @j & j < i)"
+#endif
+
+// 
+#ifdef nottimed
+lemma trace_HELLOs_Gen [reuse]:  
+  "All x w #i. (HELLO_sent(x,w) @i
+    & not (Ex #r. RevLtk(x) @r)
+      & not (Ex #r. RevLtk(w) @r))
+    ==>
+  Ex #j. (Gen_ent(x) @j & j < i)"
+#endif
+// 
+#ifdef timethis
+lemma fake_trace_HELLOr_HELLOs: 
+  "All w x #i. HELLO_received(x, w) @i
+    ==>
+  Ex #j. HELLO_sent(x, w) @j & j<i"
+#endif
+
+//  
+#ifdef timethis
+lemma trace_HELLOr_HELLOs: 
+  " All w x #i. (HELLO_received(x, w)  @i
+      & not (Ex #r. RevLtk(x) @r)
+      & not (Ex #r. RevLtk(w) @r))
+    ==>
+    Ex #j. HELLO_sent(x, w) @j & j<i"
+#endif
+
+// 
+#ifdef timethis
+lemma fake_trace_WELCOMEr_WELCOMEs: 
+  "All w x #i. WELCOME_received(w, x) @i
+    ==>
+  Ex #j. WELCOME_sent(w,x) @j & j<i"
+#endif
+
+//  
+#ifdef timethis
+lemma trace_WELCOMEr_WELCOMEs: 
+  " All w x #i. (WELCOME_received(w, x) @i
+      & not (Ex #r. RevLtk(x) @r)
+      & not (Ex #r. RevLtk(w) @r))
+    ==>
+    Ex #j. WELCOME_sent(w,x) @j & j<i"
+#endif
+
+// 
+#ifdef nottimed
+lemma fake_trace_PRIVATE_REQs_WELCOMEr: 
+  "All y x #i. PRIVATE_REQ_sent(x,y) @i
+    ==>
+  Ex w #j. WELCOME_received(w,x) @j & j<i"
+#endif
+
+//  
+#ifdef nottimed
+lemma trace_PRIVATE_REQs_WELCOMEr: 
+  " All y x #i. (PRIVATE_REQ_sent(x,y) @i
+      & not (Ex #r. RevLtk(x) @r)
+      & not (Ex #r. RevLtk(y) @r))
+    ==>
+    Ex w #j. WELCOME_received(w,x) @j & j<i"
+#endif
+
+// 
+#ifdef nottimed
+lemma fake_trace_PRIVATE_REQr_PRIVATE_REQs: 
+  "All y x #i. PRIVATE_REQ_received(x,y) @i
+    ==>
+  Ex #j. PRIVATE_REQ_sent(x,y) @j & j<i"
+#endif
+
+//  
+#ifdef timethis
+lemma trace_PRIVATE_REQr_PRIVATE_REQ_s: 
+  " All y x #i. (PRIVATE_REQ_received(x,y) @i
+      & not (Ex #r. RevLtk(x) @r)
+      & not (Ex #r. RevLtk(y) @r))
+    ==>
+    Ex #j. PRIVATE_REQ_sent(x,y) @j & j<i" 
+#endif
+
+// 
+#ifdef timethis
+lemma fake_trace_FOLLOW_WELCr_FOLLOW_WELCs: 
+  "All y x #i. FOLLOW_WELCOME_received(y,x) @i
+    ==>
+  Ex #j. FOLLOW_WELCOME_sent(y,x) @j & j<i"
+#endif
+
+//  
+#ifdef timethis
+lemma trace_FOLLOW_WELCr_FOLLOW_WELCs: 
+  " All y x #i. (FOLLOW_WELCOME_received(y,x) @i
+      & not (Ex #r. RevLtk(x) @r)
+      & not (Ex #r. RevLtk(y) @r))
+    ==>
+    Ex #j. FOLLOW_WELCOME_sent(y,x) @j & j<i" 
+#endif
+
+end

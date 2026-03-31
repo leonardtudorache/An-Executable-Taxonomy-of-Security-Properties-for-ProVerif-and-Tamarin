@@ -1,0 +1,373 @@
+[
+  {
+    "citation_code": "M.Pradhan_S.Mohanty_2024",
+    "paper_name": "A Blockchain-Assisted Multifactor Authentication Protocol for Enhancing IoMT Security",
+    "properties": "multifactor authentication",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Jacomme_Klein_Kremer_Racouchot_2023",
+    "paper_name": "A comprehensive, formal and automated analysis of the EDHOC protocol",
+    "properties": "confidentiality, forward secrecy, authentication, anonymity, non-repudiation",
+    "tool": "Tamarin",
+    "year": 2023
+  },
+  {
+    "citation_code": "X.Ren_J.Cao_B.Niu_L.Gan_Y.Zhang_L.Xiong_Y.Luo_H.Li_2024",
+    "paper_name": "A Formal Analysis of 5G ProSe AKA Protocols for U2N Relay Communication",
+    "properties": "confidentiality, weak agreement, non-injective agreement, injective agreement, authentication, unlinkability, untraceability",
+    "tool": "Tamarin",
+    "year": 2024
+  },
+  {
+    "citation_code": "Wang_Li_Guan_2024",
+    "paper_name": "A Formal Analysis of Data Distribution Service Security",
+    "properties": "confidentiality, authentication",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Zou_Cao_Lu_Wang_Xu_Ma_Cheng_Xi_2024",
+    "paper_name": "A robust and effective 3-factor authentication protocol for smart factory in IIoT",
+    "properties": "forward secrecy, mutual authentication, anonymity, session key agreement",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Liu_Zhou_Cao_Xu_Wang_Gao_Zeng_Xu_2023",
+    "paper_name": "A Robust and Effective Two-Factor Authentication (2FA) Protocol Based on ECC for Mobile Computing",
+    "properties": "forward secrecy, untraceability, anonymity, mutual authentication",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Rangwani_Om_2023",
+    "paper_name": "A Robust Four-Factor Authentication Protocol for Resource Mining",
+    "properties": "forward secrecy, untraceability, anonymity",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Li_2023",
+    "paper_name": "A secure and efficient three-factor authentication protocol for IoT environments",
+    "properties": "forward secrecy, untraceability, anonymity, mutual authentication",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Chunka_Banerjee_SachinKumar_2023",
+    "paper_name": "A secure communication using multifactor authentication and key agreement techniques in internet of medical things for COVID-19 patients",
+    "properties": "authentication, forward secrecy, untraceability",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Wu_Meng_Yang_Kumari_Pirouz_2022",
+    "paper_name": "Amassing the Security: An Enhanced Authentication and Key Agreement Protocol for Remote Surgery in healthcare Environment",
+    "properties": "forward secrecy, anonymity",
+    "tool": "ProVerif",
+    "year": 2022
+  },
+  {
+    "citation_code": "Shahrouz_Analoui_2024",
+    "paper_name": "An anonymous authentication scheme with conditional privacy-preserving for Vehicular Ad hoc Networks based on zero-knowledge proof and Blockchain",
+    "properties": "integrity, non-repudiation, traceability, privacy",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Raimondo_Bernardi_Marrone_Merseguer_2023",
+    "paper_name": "An approach for the automatic verification of blockchain protocols: the Tweetchain case study",
+    "properties": "integrity",
+    "tool": "Tamarin",
+    "year": 2023
+  },
+  {
+    "citation_code": "Y.Huang_G.Xu_X.Song_Y.Xu_2024",
+    "paper_name": "An Efficient RLWE-Based Privacy-Preserving Authentication Scheme Based on Edge Computing in Industrial Internet of Things",
+    "properties": "authentication, integrity, mutual authentication, forward secrecy, anonymity, session key agreement",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Saini_Kaur_Kumar_Kumar_2024",
+    "paper_name": "An efficient three-factor authentication protocol for wireless healthcare sensor networks",
+    "properties": "anonymity, untraceability, mutual authentication",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Wang_Wu_Wen_Zhou_Hu_Xie_2025",
+    "paper_name": "An Improved Blockchain-Based Lightweight Vehicle-to-Infrastructure Handover Authentication Protocol for Vehicular Ad Hoc Networks",
+    "properties": "untraceability, anonymity, mutual authentication, forward secrecy, confidentiality, integrity",
+    "tool": "ProVerif",
+    "year": 2025
+  },
+  {
+    "citation_code": "Sabry_Samavi_2022",
+    "paper_name": "ArchiveSafe LT: Secure Long-term Archiving System",
+    "properties": "confidentiality, integrity",
+    "tool": "Tamarin",
+    "year": 2022
+  },
+  {
+    "citation_code": "Miculan_Vitacolonna_2023",
+    "paper_name": "Automated verification of Telegram’s MTProto 2.0 in the symbolic model",
+    "properties": "forward secrecy, secrecy, authentication, integrity",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Xie_Wu_Hou_2023",
+    "paper_name": "BEPHAP: A Blockchain-based Efficient Privacy-Preserving Handover Authentication Protocol with key agreement for Internet of Vehicles",
+    "properties": "mutual authentication, correctness, integrity, confidentiality, privacy, anonymity, unlinkability, traceability, non-frameability, key escrow freeness",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Li_Jin_Levchenko_2024",
+    "paper_name": "CAPSID: A Private Session ID System for Small UAVs",
+    "properties": "off-line verifiable, traceability, unlinkability",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Feng_Yu_Wang_Bobda_2025",
+    "paper_name": "CIVIC-FPGA: A Trusted FPGA Design Validation by Multi-Tenant Cloud Providers",
+    "properties": "confidentiality, integrity, mutual authentication, secure key agreement",
+    "tool": "ProVerif",
+    "year": 2025
+  },
+  {
+    "citation_code": "Wagner_Birnstill_Beyerer_2024",
+    "paper_name": "DDS Security+: Enhancing the Data Distribution Service With TPM-based Remote Attestation",
+    "properties": "integrity, attestation",
+    "tool": "Tamarin",
+    "year": 2024
+  },
+  {
+    "citation_code": "Kim_Ryu_Lee_Lee_Won_2023",
+    "paper_name": "Distributed and Federated Authentication Schemes Based on Updatable Smart Contracts",
+    "properties": "forward secrecy, post-compromise security, mutual authentication, anonymity",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Seo_Kim_Lee_Kwon_Seo_2023",
+    "paper_name": "Efficient Remote Identification for Drone Swarms",
+    "properties": "secrecy, integrity",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Méré_Jouault_Pallardy_Perdriau_2024",
+    "paper_name": "Evaluating formal model verification tools in an industrial context: the case of a smart device life cycle management system",
+    "properties": "confidentiality, authentication",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "H.Feng_J.Guan_H.Li_X.Pan_Z.Zhao_2023",
+    "paper_name": "FIDO Gets Verified: A Formal Analysis of the Universal Authentication Framework Protocol",
+    "properties": "authentication, unlinkability, confidentiality, privacy, non-repudiation",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Zhu_Xu_Cui_2024",
+    "paper_name": "Formal Analysis of 5G EAP-TLS 1.3",
+    "properties": "injective agreement, confidentiality, privacy",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Bodei_DeVincenzi_Matteucci_2024",
+    "paper_name": "Formal analysis of an AUTOSAR-based basic software module",
+    "properties": "non-injective agreement, injective agreement, one-time group agreement, secrecy",
+    "tool": "Tamarin",
+    "year": 2024
+  },
+  {
+    "citation_code": "Cremers_Jacomme_Naska_2023",
+    "paper_name": "Formal Analysis of Session-Handling in Secure Messaging: Lifting Security from Sessions to Conversations",
+    "properties": "forward secrecy, post-compromise security",
+    "tool": "Tamarin",
+    "year": 2023
+  },
+  {
+    "citation_code": "Baloglu_Bursuc_Mauw_Pang_2024",
+    "paper_name": "Formal Verification and Solutions for Estonian E-Voting",
+    "properties": "receipt-freeness, integrity, verifiability",
+    "tool": "Both",
+    "year": 2024
+  },
+  {
+    "citation_code": "S.Bussa_R.Sisto_F.Valenza_2023a",
+    "paper_name": "Formal Verification of a V2X Privacy Preserving Scheme Using Proverif",
+    "properties": "confidentiality, secrecy, anonymity, unlinkability",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Watanabe_Yoneyama_2024",
+    "paper_name": "Formal Verification of Challenge Flow in EMV 3-D Secure",
+    "properties": "confidentiality, integrity",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "S.Bussa_R.Sisto_F.Valenza_2023b",
+    "paper_name": "Formal Verification of the FDO Protocol",
+    "properties": "confidentiality, authentication",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Fujita_Yoneyama_2024",
+    "paper_name": "Formal Verification of Wireless Charging Standard Qi",
+    "properties": "secrecy, integrity, privacy",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Hu_Zhang_Weimerskirch_Mao_2022",
+    "paper_name": "Gatekeeper: A Gateway-based Broadcast Authentication Protocol for the In-Vehicle Ethernet",
+    "properties": "integrity, confidentiality",
+    "tool": "Tamarin",
+    "year": 2022
+  },
+  {
+    "citation_code": "Duttagupta_Marin_Singelee_Preneel_2023",
+    "paper_name": "HAT: Secure and Practical Key Establishment for Implantable Medical Devices",
+    "properties": "secrecy, authentication, traceability, equivalence properties",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Pietro_Savio_Roberto_2023",
+    "paper_name": "Lightweight Privacy-Preserving Proximity Discovery for Remotely-Controlled Drones",
+    "properties": "secrecy, integrity",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Ahn_Kwak_Kim_2024",
+    "paper_name": "mdTLS: How to Make Middlebox-Aware TLS More Efficient?",
+    "properties": "authentication, secrecy, integrity",
+    "tool": "Tamarin",
+    "year": 2024
+  },
+  {
+    "citation_code": "Moustafa_Sethi_Aura_2025",
+    "paper_name": "Misbinding Raw Public Keys to Identities in TLS",
+    "properties": "authentication",
+    "tool": "ProVerif",
+    "year": 2025
+  },
+  {
+    "citation_code": "You_Kim_Pawana_Ko_2024",
+    "paper_name": "Mitigating Security Vulnerabilities in 6G Networks: A Comprehensive Analysis of the DMRN Protocol Using SVO Logic and ProVerif",
+    "properties": "mutual authentication, secure key exchange, forward secrecy",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Y.Song_F.Jiang_S.W.AliShah_R.Doss_2023",
+    "paper_name": "Multi-Factor Continuous Authentication of Drivers Leveraging Smartphone",
+    "properties": "integrity",
+    "tool": "Tamarin",
+    "year": 2023
+  },
+  {
+    "citation_code": "B.Fila_S.Radomirović_2024",
+    "paper_name": "Nothing is Out-of-Band: Formal Modeling of Ceremonies",
+    "properties": "secrecy, integrity",
+    "tool": "Tamarin",
+    "year": 2024
+  },
+  {
+    "citation_code": "S.Lu_Z.Li_X.Miao_Q.Han_J.Zheng_2023",
+    "paper_name": "PIWS: Private Intersection Weighted Sum Protocol for Privacy-Preserving Score-Based Voting With Perfect Ballot Secrecy",
+    "properties": "eligibility, privacy, fairness, integrity, anonymity, correctness, verifiability",
+    "tool": "Tamarin",
+    "year": 2023
+  },
+  {
+    "citation_code": "Akman_Ginzboorg_Damir_Niemi_2023",
+    "paper_name": "Privacy-Enhanced AKMA for Multi-Access Edge Computing Mobility",
+    "properties": "forward secrecy, secrecy, reachability, secrecy, aliveness, weak agreement, injective agreement, non-injective agreement",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Xie_Liu_Ding_Tan_Han_2023",
+    "paper_name": "Provably Secure and Lightweight Patient Monitoring Protocol for Wireless Body Area Network in IoHT",
+    "properties": "forward secrecy, anonymity, unlinkability",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Bursuc_Horne_Mauw_Yurkov_2023",
+    "paper_name": "Provably Unlinkable Smart Card-based Payments",
+    "properties": "unlinkability, injective agreement",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Wang_Laing_Moreira_Ryan_2024",
+    "paper_name": "Remote Registration of Multiple Authenticators",
+    "properties": "non-injective agreement, privacy",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Rakeei_Giustolisi_Lenzini_2023",
+    "paper_name": "Secure Internet Exams Despite Coercion",
+    "properties": "anonymity, single-blindness",
+    "tool": "ProVerif",
+    "year": 2023
+  },
+  {
+    "citation_code": "Ahmed_Peltonen_Sethi_Aura_2024",
+    "paper_name": "Security Analysis of the Consumer Remote SIM Provisioning Protocol",
+    "properties": "mutual authentication, integrity, confidentiality, profile binding",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "DeVaere_Stoger_Perrig_Tsudik_2024",
+    "paper_name": "The SA4P Framework: Sensing and Actuation as a Privilege",
+    "properties": "authentication, secrecy, verification of intent",
+    "tool": "Tamarin",
+    "year": 2024
+  },
+  {
+    "citation_code": "Giantsidi_Pritzi_Gust_Katsarakis_Koshiba_Bhatotia_2025",
+    "paper_name": "TNIC: A Trusted NIC Architecture: A hardware-network substrate for building high-performance trustworthy distributed systems",
+    "properties": "remote attestation, transferable authentication, non-equivocation",
+    "tool": "Tamarin",
+    "year": 2025
+  },
+  {
+    "citation_code": "Ko_Pawana_Won_Astillo_You_2024",
+    "paper_name": "Toward an Era of Secure 5G Convergence Applications: Formal Security Verification of 3GPP AKMA with TLS 1.3 PSK Option",
+    "properties": "confidentiality, integrity, mutual authentication, secure key exchange, forward secrecy",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Zarbi_Zaeembashi_Bagheri_Adeli_2024",
+    "paper_name": "Toward designing a lightweight RFID authentication protocol",
+    "properties": "forward secrecy, untraceability",
+    "tool": "ProVerif",
+    "year": 2024
+  },
+  {
+    "citation_code": "Lafourcade_Mahmoud_Marcadet_Olivier-Anclin_2024",
+    "paper_name": "Transferable, Auditable and Anonymous Ticketing Protocol",
+    "properties": "correctness, unforgeability, privacy, anonymity, no-double-spending",
+    "tool": "ProVerif",
+    "year": 2024
+  }
+]

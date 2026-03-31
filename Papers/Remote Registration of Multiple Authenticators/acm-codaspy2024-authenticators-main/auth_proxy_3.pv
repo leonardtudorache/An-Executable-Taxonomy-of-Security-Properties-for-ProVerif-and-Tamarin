@@ -1,0 +1,251 @@
+(******************************************************************************
+   Remote Registration of Multiple Authenticators
+   Yongqi Wang, Thalia Laing, Jose Moreira, Mark Ryan
+   ACM CODASPY 2024, June 19-21, 2024, Porto, Portugal
+
+   ProVerif model - Proxy authenticators
+ ******************************************************************************)
+
+
+(* Equational theory for probabilistic signatures *)
+type sskey.                 (* Signature secret key *)
+type spkey.                 (* Signature public key *)
+type signature.             (* Signature *)
+fun Pk(sskey): spkey.       (* Signature public key derivation function *)
+type spkey_list.            (* Signature public key list *)
+fun PkList((*1*)spkey, (*2*)spkey, (*3*)spkey): spkey_list [data].
+                            (* Ring signature public key list constructor *)
+
+type randomness.
+fun InternalSign(sskey, bitstring, randomness): signature.
+
+letfun Sign(x:sskey, m:bitstring) =
+    new r:randomness; InternalSign(x, m, r).
+
+fun Verify(spkey, bitstring, signature): bool
+    reduc forall x:sskey, m:bitstring, r:randomness;
+        Verify(Pk(x), m, InternalSign(x,m,r)) = true
+    otherwise forall y:spkey, m:bitstring, s:signature;
+        Verify(y, m, s) = false.
+
+
+
+(* Extension to the equational theory for probabilistic signatures, to
+   model id-specific keypairs, i.e., a dedicated signature keypair for each id *)
+type id.                                    (* (Public) id, both for users and RPs *)
+type shsecret.                              (* Shared secret between authenticators *)
+fun DerSk(sskey, shsecret, id): sskey.      (* id-specific signature secret key derivaion function *)
+fun DerPk(spkey, shsecret, id): spkey.      (* id-specific signature public key derivaion function *)
+
+equation forall xi:sskey, k:shsecret, RPj:id; DerPk(Pk(xi), k, RPj) = Pk(DerSk(xi, k, RPj)).
+                                            (* Equation relating key derivation function and id-specific key derivation functions *)
+
+
+(* Other types and tables needed *)
+type tag.           (* Protocol message tag *)
+const REG:tag.      (* Registration protocol message tag *)
+const AUTH:tag.     (* Authentication protocol message tag *)
+type challenge.     (* RP challenge *)
+free c:channel.
+table registered_auth(id, spkey_list).      (* Stores registered authenticators - relying party store *)
+
+
+(********************
+  Events and queries
+ ********************)
+
+event A_Register(id, nat, sskey, spkey_list, id).           (* uid, i, xi, Lj,   RPj, -- *)
+event R_Register(id, spkey_list).                           (* --, --, --, RPj, Lj,   -- *)
+
+event A_Running(id, nat, sskey, spkey_list, id, bitstring). (* uid, i, xi, Lj,   RPj, p  *)
+event R_Commit(id, spkey_list, bitstring).                  (* --, --, --, RPj, Lj,   p  *)
+
+
+(* SANITY-CHECK. It is reachable that all the authenticators belonging to a user
+   uid cast the same list of public keys to register with RPj *)
+query uid:id, RPj:id, x1:sskey, x2:sskey, x3:sskey, k:shsecret;
+    let Lj = PkList(Pk(DerSk(x1, k, RPj)), Pk(DerSk(x2, k, RPj)), Pk(DerSk(x3, k, RPj))) in
+    event(A_Register(uid, 1, x1, Lj, RPj)) &&
+    event(A_Register(uid, 2, x2, Lj, RPj)) &&
+    event(A_Register(uid, 3, x3, Lj, RPj)).
+
+
+(* PROPERTY 1 (G1, G2, G7, G8, R4). All authenticators of user uid register the
+   same list of public keys with RPj. *)
+query uid:id, RPj:id,
+    i:nat, xi:sskey, Lj:spkey_list;
+    event(A_Register(uid, i, xi, Lj, RPj)).
+
+query uid:id, RPj:id,
+    i:nat, xi:sskey, Lj:spkey_list,
+    i':nat, xi':sskey, Lj':spkey_list;
+    event(A_Register(uid, i, xi, Lj, RPj)) &&
+    event(A_Register(uid, i', xi', Lj', RPj))
+    ==> Lj=Lj'.
+
+
+(* PROPERTY 2 (G1, G7, G8, R1, R3). All authenticators of user uid register a
+   given list of public keys with at most one RP *)
+query uid:id, RPj:id,
+    i:nat, xi:sskey, Lj:spkey_list;
+    event(A_Register(uid, i, xi, Lj, RPj)).
+
+query uid:id, RPj:id, RPj':id,
+    i:nat, xi:sskey, Lj:spkey_list,
+    i':nat, xi':sskey;
+    event(A_Register(uid, i, xi, Lj, RPj)) &&
+    event(A_Register(uid, i', xi', Lj, RPj'))
+    ==> RPj=RPj'.
+
+
+(* PROPERTY 3 (G1, G2, G7, G8, R4). Is it reachable that an authenticator of user
+   uid registers all their authenticators, and any other authenticator of uid can
+   then log in.
+
+   We need three different queries because once one authenticator of uid registers
+   to RPj, the remaining authenticators will not register again for RPj.
+   To test this property correctly, each of the three queries below must be
+   tested individually by enabling the necessary restrictions to prevent other
+   authenticators to register (e.g., for 3 authenticators, in order to prove the
+   query where x1 registers, the restrictions for x2 and x3 must be enabled).
+
+   However, ProVerif is able to find traces satisfying the restrictions, without
+   having to enable them. *)
+(*
+restriction uid:id, x1:sskey, x2:sskey, x3:sskey, k:shsecret, RPj:id;
+    let Lj = PkList(Pk(DerSk(x1, k, RPj)), Pk(DerSk(x2, k, RPj)), Pk(DerSk(x3, k, RPj))) in
+    event(A_Register(uid, 1, x1, Lj, RPj)).
+
+restriction uid:id, x1:sskey, x2:sskey, x3:sskey, k:shsecret, RPj:id;
+    let Lj = PkList(Pk(DerSk(x1, k, RPj)), Pk(DerSk(x2, k, RPj)), Pk(DerSk(x3, k, RPj))) in
+    event(A_Register(uid, 2, x2, Lj, RPj)).
+
+restriction uid:id, x1:sskey, x2:sskey, x3:sskey, k:shsecret, RPj:id;
+    let Lj = PkList(Pk(DerSk(x1, k, RPj)), Pk(DerSk(x2, k, RPj)), Pk(DerSk(x3, k, RPj))) in
+    event(A_Register(uid, 3, x3, Lj, RPj)).
+*)
+query uid:id, x1:sskey, x2:sskey, x3:sskey, k:shsecret, RPj:id, p1:bitstring, p2:bitstring, p3:bitstring;
+    let Lj = PkList(Pk(DerSk(x1, k, RPj)), Pk(DerSk(x2, k, RPj)), Pk(DerSk(x3, k, RPj))) in
+    event(A_Register(uid, 1, x1, Lj, RPj)) &&
+    event(A_Running(uid, 1, x1, Lj, RPj, p1)) && event(R_Commit(RPj, Lj, p1)) &&
+    event(A_Running(uid, 2, x2, Lj, RPj, p2)) && event(R_Commit(RPj, Lj, p2)) &&
+    event(A_Running(uid, 3, x3, Lj, RPj, p3)) && event(R_Commit(RPj, Lj, p3)).
+
+query uid:id, x1:sskey, x2:sskey, x3:sskey, k:shsecret, RPj:id, p1:bitstring, p2:bitstring, p3:bitstring;
+    let Lj = PkList(Pk(DerSk(x1, k, RPj)), Pk(DerSk(x2, k, RPj)), Pk(DerSk(x3, k, RPj))) in
+    event(A_Register(uid, 2, x2, Lj, RPj)) &&
+    event(A_Running(uid, 1, x1, Lj, RPj, p1)) && event(R_Commit(RPj, Lj, p1)) &&
+    event(A_Running(uid, 2, x2, Lj, RPj, p2)) && event(R_Commit(RPj, Lj, p2)) &&
+    event(A_Running(uid, 3, x3, Lj, RPj, p3)) && event(R_Commit(RPj, Lj, p3)).
+
+query uid:id, x1:sskey, x2:sskey, x3:sskey, k:shsecret, RPj:id, p1:bitstring, p2:bitstring, p3:bitstring;
+    let Lj = PkList(Pk(DerSk(x1, k, RPj)), Pk(DerSk(x2, k, RPj)), Pk(DerSk(x3, k, RPj))) in
+    event(A_Register(uid, 3, x3, Lj, RPj)) &&
+    event(A_Running(uid, 1, x1, Lj, RPj, p1)) && event(R_Commit(RPj, Lj, p1)) &&
+    event(A_Running(uid, 2, x2, Lj, RPj, p2)) && event(R_Commit(RPj, Lj, p2)) &&
+    event(A_Running(uid, 3, x3, Lj, RPj, p3)) && event(R_Commit(RPj, Lj, p3)).
+
+
+(* PROPERTY 4 (Injective agreement, G6, G7, G8, R3): Whenever RPj completes a
+   run of the authentication protocol, apparently with a registered authenticator
+   belonging to user uid (and whose public key is in Lj), then an authenticator
+   belonging to user uid has previously been running the protocol, apparently
+   with relying party RPj, and the two agents agreed on the data values
+   corresponding to all the variables in p, and each such run of the protocol
+   on RPj corresponds to a unique run of the protocol on the authenticator. *)
+query uid:id, i:nat, xi:sskey, Lj:spkey_list, RPj:id, p:bitstring;
+    event(A_Register(uid, i, xi, Lj, RPj)) && event(R_Register(RPj, Lj)) && event(R_Commit(RPj, Lj, p)).
+
+query uid:id, i:nat, xi:sskey, Lj:spkey_list, i':nat, xi':sskey, RPj:id, p:bitstring;
+    event(A_Register(uid, i, xi, Lj, RPj)) && event(R_Register(RPj, Lj)) && inj-event(R_Commit(RPj, Lj, p))
+    ==> inj-event(A_Running(uid, i', xi', Lj, RPj, p)).
+
+
+(***********************
+  Relying party process
+ ***********************)
+let RelyingParty_Register(RPj:id) =
+    new regChal:challenge;
+    out(c, (RPj, regChal));
+    in(c, (Lj:spkey_list, xS:signature));
+    let PkList(y1j, y2j, y3j) = Lj in
+    if Verify(y1j, (REG, regChal), xS)  || Verify(y2j, (REG, regChal), xS)  || Verify(y3j, (REG, regChal), xS)  = true then
+    insert registered_auth(RPj, Lj);
+    event R_Register(RPj, Lj).
+
+let RelyingParty_Authenticate(RPj:id) =
+    get registered_auth(=RPj, Lj) in
+    new authChal:challenge;
+    out(c, (RPj, authChal));
+    in(c, xS:signature);
+    let PkList(y1j, y2j, y3j) = Lj in
+    if Verify(y1j, (AUTH, authChal), xS)  || Verify(y2j, (AUTH, authChal), xS)  || Verify(y3j, (AUTH, authChal), xS)  = true then
+    event R_Commit(RPj, Lj, (Lj, RPj, authChal, xS)).
+
+let RelyingParty() =
+    new RPj:id;
+    out(c, RPj);
+    !RelyingParty_Register(RPj)
+    | !RelyingParty_Authenticate(RPj).
+
+
+(***********************
+  Authenticator process
+ ***********************)
+let Authenticator_Register(uid:id, i:nat, xi:sskey, L:spkey_list, k:shsecret) =
+    in(c, (xRPj:id, xRegChal:challenge));
+    let xij = DerSk(xi, k, xRPj) in
+    let PkList(y1, y2, y3) = L in
+    let y1j = DerPk(y1, k, xRPj) in
+    let y2j = DerPk(y2, k, xRPj) in
+    let y3j = DerPk(y3, k, xRPj) in
+    let Lj = PkList(y1j, y2j, y3j) in
+    let s = Sign(xij, (REG, xRegChal)) in
+    event A_Register(uid, i, xi, Lj, xRPj);
+    out(c, (Lj, s)).
+
+let Authenticator_Authenticate(uid:id, i:nat, xi:sskey, L:spkey_list, k:shsecret) =
+    in(c, (xRPj:id, xAuthChal:challenge));
+    let xij = DerSk(xi, k, xRPj) in
+    let PkList(y1, y2, y3) = L in
+    let y1j = DerPk(y1, k, xRPj) in
+    let y2j = DerPk(y2, k, xRPj) in
+    let y3j = DerPk(y3, k, xRPj) in
+    let Lj = PkList(y1j, y2j, y3j) in
+    let s = Sign(xij, (AUTH, xAuthChal)) in
+    event A_Running(uid, i, xi, Lj, xRPj, (Lj, xRPj, xAuthChal, s));
+    out(c, s).
+
+let Authenticator(uid:id, i:nat, xi:sskey, L:spkey_list, k:shsecret) =
+    !Authenticator_Authenticate(uid, i, xi, L, k)
+    | !Authenticator_Register(uid, i, xi, L, k).
+
+
+(*************************************
+  Authenticator set generator process
+ *************************************)
+let AuthSetGenerator() =
+    new uid:id;
+    out(c, uid);
+
+    new x1:sskey;
+    new x2:sskey;
+    new x3:sskey;
+    let y1 = Pk(x1) in
+    let y2 = Pk(x2) in
+    let y3 = Pk(x3) in
+    let L = PkList(y1, y2, y3) in
+    out(c, L);
+
+    new k:shsecret;
+    Authenticator(uid, 1, x1, L, k)
+    | Authenticator(uid, 2, x2, L, k)
+    | Authenticator(uid, 3, x3, L, k).
+
+
+(**************
+  MAIN PROCESS
+ **************)
+process
+    !AuthSetGenerator()
+    | !RelyingParty()

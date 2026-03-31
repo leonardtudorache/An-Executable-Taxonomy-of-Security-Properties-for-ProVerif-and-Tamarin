@@ -1,0 +1,155 @@
+theory DDSAuthTPM
+begin
+builtins: hashing, signing, diffie-hellman
+
+// Define two DDS participants (Alice and Bob)
+rule Participants:
+[] --> [Participant('A'), Participant('B')]
+
+// Create identity keys and certificates
+rule CreateIdentityKey:
+[ Fr(~key), Participant(X) ]
+--[
+  OnlyOnceFor(<'CreateIdentityKey', X>), IsIdentityKey(X, ~key)
+]->[ Id(X, ~key), !IdCert(X, pk(~key)) ]
+
+rule IdentityCertsArePublic:
+[ !IdCert('A', idCertA), !IdCert('B', idCertB) ]
+-->[ Out(idCertA), Out(idCertB) ]
+
+// Create attestation keys and certificates
+rule CreateAttestationKey:
+[ Fr(~ak), Participant(X) ]
+--[
+  OnlyOnceFor(<'CreateAttestationKey', X>), IsAk(X, ~ak)
+]->[ Ak(X, ~ak), !AkCert(X, pk(~ak)) ]
+
+rule AkCertsArePublic:
+[ !AkCert('A', akCertA), !AkCert('B', akCertB) ]
+-->[ Out(akCertA), Out(akCertB) ]
+
+// Execute DDS authentication protocol between Alice and Bob
+rule HandshakeRequestMessage:
+[ Fr(~nonceA)
+, Fr(~a)
+, !IdCert('A', idCertA)
+, !AkCert('A', akCertA)
+] --[
+  AuthRequest('A', 'B', ~nonceA)
+]-> [
+  Out(<'HandshakeRequestMessage', 'A', idCertA, akCertA, ~nonceA, 'g'^~a>)
+  , Alice_('B', ~nonceA, ~a)
+]
+
+rule HandshakeReplyMessage:
+let cdrbuf = <h(idCertB), ~nonceB, 'g'^~b, challenge1, dh1, h(idCertA)>
+    sigB = sign(cdrbuf, keyB)
+    quoteB = sign(<cdrbuf, 'PCRB'>, akB)
+in
+[ In(<'HandshakeRequestMessage', A, c_id, q_id, challenge1, dh1>)
+, Fr(~nonceB)
+, Fr(~b)
+, Id('B', keyB), !IdCert('B', idCertB)
+, Ak('B', akB), !AkCert('B', akCertB)
+, !IdCert(A, idCertA), !AkCert(A, akCertA)
+] --[
+  Neq(dh1, 'g')
+  , Eq(idCertA, c_id), Eq(akCertA, q_id)
+  , AuthResponse('B', A, ~nonceB, sigB, quoteB)
+]-> [
+  Out(<'HandshakeReplyMessage', 'B', idCertB, akCertB, challenge1,
+       ~nonceB, 'g'^~b, sigB, quoteB>)
+  , Bob_(A, ~nonceB, ~b, dh1)
+]
+
+rule HandshakeFinal:
+let cdrbuf = <h(idCertA), nonceA, 'g'^a, challenge2, dh2, h(idCertB)>
+    sigA = sign(cdrbuf, keyA)
+    quoteA = sign(<cdrbuf, 'PCRA'>, akA)
+in
+[ In(<'HandshakeReplyMessage', B, c_id, q_id, challenge1, challenge2,
+     dh2, signature, qSignature>)
+, Alice_(B, nonceA, a)
+, Id('A', keyA), !IdCert('A', idCertA)
+, Ak('A', akA), !AkCert('A', akCertA)
+, !IdCert(B, idCertB), !AkCert(B, akCertB)
+] --[
+  Neq(dh2, 'g')
+  , Eq(idCertB, c_id), Eq(akCertB, q_id)
+  , Eq(nonceA, challenge1)
+  , Eq(verify(signature,
+      <h(idCertB), challenge2, dh2, challenge1, 'g'^a, h(idCertA)>,
+      idCertB), true)
+  , Eq(verify(qSignature,
+      <<h(idCertB), challenge2, dh2, challenge1, 'g'^a, h(idCertA)>,
+      'PCRB'>, akCertB), true)
+  , AuthFinal('A', B, sigA, quoteA)
+  , Attested('A', B, challenge1, akCertB)
+  , EstablishedSecret('A', dh2^a)
+]-> [
+  Out(<'HandshakeFinal', 'A', challenge1, challenge2, sigA, quoteA>)
+]
+
+rule HandshakeFinal2:
+[ In(<'HandshakeFinal', A, challenge1, challenge2, signature, qSignature>)
+, Bob_(A, nonceB, b, dh1)
+, !IdCert('B', idCertB)
+, !IdCert(A, idCertA), !AkCert(A, akCertA)
+] --[
+  Eq(nonceB, challenge2)
+  , Eq(verify(signature,
+      <h(idCertA), challenge1, dh1, challenge2, 'g'^b, h(idCertB)>,
+      idCertA), true)
+  , Eq(verify(qSignature,
+      <<h(idCertA), challenge1, dh1, challenge2, 'g'^b, h(idCertB)>,
+      'PCRA'>, akCertA), true)
+  , Attested('B', A, challenge2, akCertA)
+  , EstablishedSecret('B', dh1^b)
+]-> [ ]
+
+restriction Equality:
+"All x y #i. Eq(x, y)@i ==> x = y"
+
+restriction InEquality:
+"All x y #i. Neq(x, y)@i ==> not (x = y)"
+
+restriction OnlyOnceFor:
+"All X #i #j. OnlyOnceFor(X)@#i & OnlyOnceFor(X)@#j ==> #i = #j"
+
+/* Prove that Alice and Bob mutually authenticate each other and establish
+ * a shared secret. This lemma ensures that the model is fully executed. */
+lemma HonestProtocol:
+exists-trace
+Ex c1 c2 dh1 dh2 idCertA idCertB keyA keyB akA akB secret #i #j #k #l #m.
+  AuthRequest('A', 'B', c1)@#i
+  & AuthResponse('B', 'A', c2,
+    sign(<h(idCertB), c2, dh2, c1, dh1, h(idCertA)>, keyB),
+    sign(<<h(idCertB), c2, dh2, c1, dh1, h(idCertA)>, 'PCRB'>, akB))@#j
+  & AuthFinal('A', 'B',
+    sign(<h(idCertA), c1, dh1, c2, dh2, h(idCertB)>, keyA),
+    sign(<<h(idCertA), c1, dh1, c2, dh2, h(idCertB)>, 'PCRA'>, akA))@#k
+  & EstablishedSecret('A', secret)@#l
+  & EstablishedSecret('B', secret)@#m
+
+/* Prove that an attacker cannot intercept the established secret.
+ * This lemma is reduced to the security of an authenticated DHKE. */
+lemma EstablishedKeySecrecy:
+not (
+  Ex c1 c2 sigA sigB quoteA quoteB secret #i #j #k #l #m #n.
+  AuthRequest('A', 'B', c1)@#i
+  & AuthResponse('B', 'A', c2, sigB, quoteB)@#j
+  & AuthFinal('A', 'B', sigA, quoteA)@#k
+  & EstablishedSecret('A', secret)@#l
+  & EstablishedSecret('B', secret)@#m
+  & K(secret)@#n
+)
+
+/* Prove that Alice and Bob mutually attest to each other during the
+ * authentication, while establishing a single shared secret. */
+lemma MutualAttestation:
+exists-trace
+Ex akA akB nonceA nonceB secret #i #j #k #l.
+  IsAk('A', akA)@#i & IsAk('B', akB)@#j
+  & Attested('A', 'B', nonceA, pk(akB))@#k
+  & EstablishedSecret('A', secret)@#k
+  & Attested('B', 'A', nonceB, pk(akA))@#l

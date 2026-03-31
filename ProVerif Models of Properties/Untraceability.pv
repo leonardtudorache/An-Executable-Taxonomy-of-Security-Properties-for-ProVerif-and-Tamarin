@@ -1,0 +1,66 @@
+(* Model create based on: https://ieeexplore.ieee.org/abstract/document/5402514 *)
+(* Types and constants *)
+type tag_id.
+type message.
+type key.
+
+(* Channels *)
+free c: channel. 
+free db: channel [private].  
+
+free Welcome: message.
+
+(* Encryption *)
+fun encrypt(bitstring, key): bitstring.
+reduc forall m: bitstring, k: key; decrypt(encrypt(m,k),k) = m.
+
+(* Events for verification *)
+event TagStart(tag_id).
+event TagEnd(tag_id).
+event ReaderStart(tag_id).
+event ReaderEnd(tag_id).
+
+(* Correspondence queries *)
+query id: tag_id; 
+    event(ReaderEnd(id)) ==> event(TagStart(id)).
+
+(* Untraceability query *)
+(* Untraceability is sometimes defined as ensuring that
+an intruder tampering with the system thinks that each
+tag session is initiated by a different tag. *)
+query t1: tag_id, t2: tag_id;
+    event(TagEnd(t1)) && event(TagEnd(t2)) ==>
+    (t1 = t2) || (event(TagStart(t1)) && event(TagStart(t2))).
+
+let Tag(id: tag_id, k: key) =
+    in(c, x: message);
+    if x = Welcome then (
+        event TagStart(id);
+        new n: bitstring; 
+        let m = encrypt((Welcome, id), k) in
+        out(c, m);
+        event TagEnd(id)
+    ).
+
+let Reader(k: key) =
+    new n: bitstring;
+    out(c, Welcome);
+    in(c, m: bitstring);
+    let (w: message, id: tag_id) = decrypt(m, k) in
+    if w = Welcome then (
+        event ReaderStart(id);
+        (* Database check *)
+        out(db, id)
+    ).
+
+let Database =
+    !in(db, id: tag_id);
+    out(db, true).
+
+process
+    (* Generate shared key *)
+    new k: key;
+
+    (!Database) |
+    (!Reader(k)) |
+    (!new id: tag_id; !Tag(id, k))

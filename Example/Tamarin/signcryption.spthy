@@ -1,0 +1,83 @@
+theory Signcryption
+begin
+
+builtins: signing
+
+functions: 
+    e/2, g/0,
+    h/1,  
+    senc/2, sdec/2,
+    signcrypt/3, 
+    verifySignature/4
+
+equations:
+    sdec(senc(m, k), k) = m,
+    verifySignature(pk(skA), r, signcrypt(x, r, skA), skB) = e(pk(skB), x)
+
+/* --- 1. Setup --- */
+rule Setup_Alice:
+    [ Fr(~skA) ]
+  -->
+    [ !LtkA(~skA), !PkA(pk(~skA)), Out(pk(~skA)) ]
+
+rule Setup_Bob:
+    [ Fr(~skB) ]
+  -->
+    [ !LtkB(~skB), !PkB(pk(~skB)), Out(pk(~skB)) ]
+
+/* --- 2. Alice (Sender) --- */
+rule Alice_Sender:
+    let
+        K_dh  = e(pkB, ~x)
+        k_enc = h(<'encryption', K_dh>)
+        c     = senc(~m, k_enc)
+        r     = h(<~m, K_dh>)
+        s     = signcrypt(~x, r, ~skA)
+    in
+    [ 
+      Fr(~x), 
+      Fr(~m), 
+      !LtkA(~skA), 
+      !PkB(pkB)   
+    ]
+--[ SignedBy(~skA, ~m),
+      Secret(~m)  ]->
+    [ Out( <c, r, s> ), St_Alice_Sent('Alice', 'Bob', ~m, r) ]
+
+/* --- 3. Bob (Receiver) --- */
+rule Bob_Receiver:
+    let
+        K_prime     = verifySignature(pkA, r, s, ~skB)
+        k_enc_prime = h(<'encryption', K_prime>)
+        m_prime     = sdec(c, k_enc_prime)
+        r_check     = h(<m_prime, K_prime>)
+    in
+    [ 
+      !LtkB(~skB), 
+      !PkA(pkA), 
+      In( <c, r, s> ) 
+    ]
+  --[ 
+      Eq(r, r_check),
+      Finished_Bob('Bob', m_prime),
+      ValidSignature(m_prime, pkA)
+    ]->
+    [ ]
+
+restriction Equality:
+    "All x y #i. Eq(x, y) @i ==> x = y"
+
+
+lemma Executability:
+    exists-trace
+    "Ex B m #i. Finished_Bob(B, m) @i"
+
+
+lemma Unforgeability:
+    all-traces
+    "All m pkA #i. ValidSignature(m, pkA) @ i ==> 
+        (Ex sk #j. SignedBy(sk, m) @ j & pk(sk) = pkA)"
+
+lemma Secrecy: "All x #i. Secret(x) @i ==> not (Ex #j. K(x)@j)"
+
+end

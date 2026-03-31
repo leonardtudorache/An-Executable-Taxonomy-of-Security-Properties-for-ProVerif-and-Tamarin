@@ -1,0 +1,86 @@
+(* Types and Constants *)
+type key.
+type exponent.
+type G.
+type id_key.
+
+(* Symmetric primitives *)
+fun h(key): key.
+fun kdf(key, key): key.
+fun enc(bitstring, key): bitstring.
+reduc forall m: bitstring, k: key; dec(enc(m, k), k) = m.
+
+(* Diffie-Hellman *)
+fun g(exponent): G.
+fun exp(G, exponent): key.
+equation forall x: exponent, y: exponent; exp(g(x), y) = exp(g(y), x).
+
+(* Digital Signatures for Authentication *)
+fun pub(id_key): id_key.
+fun sign(G, id_key): bitstring.
+reduc forall m: G, k: id_key; checksign(sign(m, k), pub(k)) = m.
+
+(* Channels and Secrets *)
+free c: channel.
+free secret_future_data: bitstring [private].
+
+event check().
+query event(check()).
+
+(* Query: Post-Compromise Security (Backward Secrecy) *)
+query attacker(secret_future_data).
+
+(* Alice's Process *)
+let Alice(rk_0: key, skA: id_key, pkB: id_key) =
+    (* --- PHASE 1: THE COMPROMISE --- *)
+    phase 1;
+    out(c, rk_0); (* Symmetric state is leaked to attacker *)
+
+    (* --- PHASE 2: THE HEALING --- *)
+    phase 2;
+    new a: exponent;
+    let ga = g(a) in
+    out(c, (ga, sign(ga, skA))); (* Alice sends signed contribution *)
+    
+    in(c, (gb: G, sigB: bitstring));
+    if checksign(sigB, pkB) = gb then (
+        let shared_secret = exp(gb, a) in
+        let rk_1 = kdf(rk_0, shared_secret) in
+        let chain_key = h(rk_1) in
+        
+        out(c, enc(secret_future_data, chain_key))
+    ).
+
+(* Bob's Process *)
+let Bob(rk_0: key, skB: id_key, pkA: id_key) =
+    phase 1;
+    (* Bob's state is also effectively leaked *)
+    
+    phase 2;
+    new b: exponent;
+    let gb = g(b) in
+    
+    in(c, (ga: G, sigA: bitstring));
+    if checksign(sigA, pkA) = ga then (
+        out(c, (gb, sign(gb, skB))); (* Bob sends signed contribution *)
+        
+        let shared_secret = exp(ga, b) in
+        let rk_1 = kdf(rk_0, shared_secret) in
+        let chain_key = h(rk_1) in
+        
+        in(c, ciphertext: bitstring);
+        let decrypted_data = dec(ciphertext, chain_key) in
+        event check();
+        0
+    ).
+
+(* Main System *)
+process
+    (* Setup long-term identity keys *)
+    new skA: id_key; let pkA = pub(skA) in out(c, pkA);
+    new skB: id_key; let pkB = pub(skB) in out(c, pkB);
+    
+    (* Setup initial shared symmetric state *)
+    new shared_rk: key;
+    
+    (Alice(shared_rk, skA, pkB) | Bob(shared_rk, skB, pkA))

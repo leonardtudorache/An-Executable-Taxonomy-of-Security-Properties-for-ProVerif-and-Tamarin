@@ -1,0 +1,206 @@
+(******************************************************************************
+   Remote Registration of Multiple Authenticators
+   Yongqi Wang, Thalia Laing, Jose Moreira, Mark Ryan
+   ACM CODASPY 2024, June 19-21, 2024, Porto, Portugal
+
+   ProVerif model - Duplicate authenticators
+ ******************************************************************************)
+
+
+(* Equational theory for probabilistic signatures *)
+type sskey.                 (* Signature secret key *)
+type spkey.                 (* Signature public key *)
+type signature.             (* Signature *)
+fun Pk(sskey): spkey.       (* Signature public key derivation function *)
+
+type randomness.
+fun InternalSign(sskey, bitstring, randomness): signature.
+
+letfun Sign(x:sskey, m:bitstring) =
+    new r:randomness; InternalSign(x, m, r).
+
+fun Verify(spkey, bitstring, signature): bool
+    reduc forall x:sskey, m:bitstring, r:randomness;
+        Verify(Pk(x), m, InternalSign(x,m,r)) = true
+    otherwise forall y:spkey, m:bitstring, s:signature;
+        Verify(y, m, s) = false.
+
+
+
+(* Extension to the equational theory for probabilistic signatures, to
+   model id-specific keypairs, i.e., a dedicated signature keypair for each id *)
+type id.                                    (* (Public) id, both for users and RPs *)
+type shsecret.                              (* Shared secret between authenticators *)
+fun H(shsecret, id): sskey.                 (* id-specific signature secret key derivaion function *)
+
+
+
+(* Other types and tables needed *)
+type tag.           (* Protocol message tag *)
+const REG:tag.      (* Registration protocol message tag *)
+const AUTH:tag.     (* Authentication protocol message tag *)
+type challenge.     (* RP challenge *)
+free c:channel.
+table registered_auth(id, spkey).      (* Stores registered authenticators - relying party store *)
+
+
+(********************
+  Events and queries
+ ********************)
+
+event A_Register(id, nat, sskey, spkey, id).           (* uid, i, xi, yij,   RPj, -- *)
+event R_Register(id, spkey).                           (* --, --, --, RPj, yij,   -- *)
+
+event A_Running(id, nat, sskey, spkey, id, bitstring). (* uid, i, xi, yij,   RPj, p  *)
+event R_Commit(id, spkey, bitstring).                  (* --, --, --, RPj, yij,   p  *)
+
+
+(* SANITY-CHECK. It is reachable that all the authenticators belonging to a user
+   uid cast the same list of public keys to register with RPj *)
+query uid:id, RPj:id, {x$i;:sskey}, k:shsecret;
+    {event(A_Register(uid, $i;, x$i;, Pk(H(k, RPj)), RPj))/ &&
+    }.
+
+
+(* PROPERTY 1 (G1, G2, G7, G8, R4). All authenticators of user uid register the
+   same list of public keys with RPj. *)
+query uid:id, RPj:id,
+    i:nat, xi:sskey, yij:spkey;
+    event(A_Register(uid, i, xi, yij, RPj)).
+
+query uid:id, RPj:id,
+    i:nat, xi:sskey, yij:spkey,
+    i':nat, xi':sskey, yij':spkey;
+    event(A_Register(uid, i, xi, yij, RPj)) &&
+    event(A_Register(uid, i', xi', yij', RPj))
+    ==> yij=yij'.
+
+
+(* PROPERTY 2 (G1, G7, G8, R1, R3). All authenticators of user uid register a
+   given list of public keys with at most one RP *)
+query uid:id, RPj:id,
+    i:nat, xi:sskey, yij:spkey;
+    event(A_Register(uid, i, xi, yij, RPj)).
+
+query uid:id, RPj:id, RPj':id,
+    i:nat, xi:sskey, yij:spkey,
+    i':nat, xi':sskey;
+    event(A_Register(uid, i, xi, yij, RPj)) &&
+    event(A_Register(uid, i', xi', yij, RPj'))
+    ==> RPj=RPj'.
+
+
+(* PROPERTY 3 (G1, G2, G7, G8, R4). Is it reachable that an authenticator of user
+   uid registers all their authenticators, and any other authenticator of uid can
+   then log in.
+
+   We need three different queries because once one authenticator of uid registers
+   to RPj, the remaining authenticators will not register again for RPj.
+   To test this property correctly, each of the three queries below must be
+   tested individually by enabling the necessary restrictions to prevent other
+   authenticators to register (e.g., for 3 authenticators, in order to prove the
+   query where x1 registers, the restrictions for x2 and x3 must be enabled).
+
+   However, ProVerif is able to find traces satisfying the restrictions, without
+   having to enable them. *)
+(*
+{restriction uid:id, {x$i;:sskey}, k:shsecret, RPj:id;
+    event(A_Register(uid, $i;, x$i;, Pk(H(k, RPj)), RPj))./
+
+}
+*)
+{query uid:id, {x$i;:sskey}, yij:spkey, k:shsecret, RPj:id, {p$i;:bitstring};
+    event(A_Register(uid, $i;, x$i;, Pk(H(k, RPj)), RPj)) &&
+    {event(A_Running(uid, $i;, x$i;, yij, RPj, p$i;)) && event(R_Commit(RPj, yij, p$i;))/ &&
+    }./
+
+}
+
+
+(* PROPERTY 4 (Injective agreement, G6, G7, G8, R3): Whenever RPj completes a
+   run of the authentication protocol, apparently with a registered authenticator
+   belonging to user uid (and whose public key is in Lj), then an authenticator
+   belonging to user uid has previously been running the protocol, apparently
+   with relying party RPj, and the two agents agreed on the data values
+   corresponding to all the variables in p, and each such run of the protocol
+   on RPj corresponds to a unique run of the protocol on the authenticator. *)
+query uid:id, i:nat, xi:sskey,  yij:spkey, RPj:id, p:bitstring;
+    event(A_Register(uid, i, xi, yij, RPj)) && event(R_Register(RPj, yij)) && event(R_Commit(RPj, yij, p)).
+
+query uid:id, i:nat, xi:sskey,  yij:spkey, i':nat, xi':sskey, RPj:id, p:bitstring;
+    event(A_Register(uid, i, xi, yij, RPj)) && event(R_Register(RPj, yij)) && inj-event(R_Commit(RPj, yij, p))
+    ==> inj-event(A_Running(uid, i', xi', yij, RPj, p)).
+
+
+(***********************
+  Relying party process
+ ***********************)
+let RelyingParty_Register(RPj:id) =
+    new regChal:challenge;
+    out(c, (RPj, regChal));
+    in(c, (yij:spkey, xS:signature));
+    if Verify(yij, (REG, regChal), xS) = true then
+    insert registered_auth(RPj, yij);
+    event R_Register(RPj, yij).
+
+let RelyingParty_Authenticate(RPj:id) =
+    get registered_auth(=RPj, yij) in
+    new authChal:challenge;
+    out(c, (RPj, authChal));
+    in(c, xS:signature);
+    if Verify(yij, (AUTH, authChal), xS) = true then
+    event R_Commit(RPj, yij, (yij, RPj, authChal, xS)).
+
+let RelyingParty() =
+    new RPj:id;
+    out(c, RPj);
+    !RelyingParty_Register(RPj)
+    | !RelyingParty_Authenticate(RPj).
+
+
+(***********************
+  Authenticator process
+ ***********************)
+let Authenticator_Register(uid:id, i:nat, xi:sskey, k:shsecret) =
+    in(c, (xRPj:id, xRegChal:challenge));
+    let xij = H(k, xRPj) in
+    let yij = Pk(xij) in
+    let s = Sign(xij, (REG, xRegChal)) in
+    event A_Register(uid, i, xi, yij, xRPj);
+    out(c, (yij, s)).
+
+let Authenticator_Authenticate(uid:id, i:nat, xi:sskey, k:shsecret) =
+    in(c, (xRPj:id, xAuthChal:challenge));
+    let xij = H(k, xRPj) in
+    let yij = Pk(xij) in
+    let s = Sign(xij, (AUTH, xAuthChal)) in
+    event A_Running(uid, i, xi, yij, xRPj, (yij, xRPj, xAuthChal, s));
+    out(c, s).
+
+let Authenticator(uid:id, i:nat, xi:sskey, k:shsecret) =
+    !Authenticator_Authenticate(uid, i, xi, k)
+    | !Authenticator_Register(uid, i, xi, k).
+
+
+(*************************************
+  Authenticator set generator process
+ *************************************)
+let AuthSetGenerator() =
+    new uid:id;
+    out(c, uid);
+
+    new x:sskey;
+    let y = Pk(x) in
+    out(c, y);
+
+    new k:shsecret;
+    {Authenticator(uid, $i;, x, k)/
+    | }.
+
+
+(**************
+  MAIN PROCESS
+ **************)
+process
+    !AuthSetGenerator()
+    | !RelyingParty()

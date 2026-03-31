@@ -1,0 +1,298 @@
+/*
+
+    Pairing protocol
+
+    user pushes buton
+    1. gw -> srv: <E_gw, mac(<E_gw>, psk)>
+    2. srv -> gw: <E_srv, mac(<E_gw, E_srv>, psk)>
+    3. key derived as hkdf(DH(SE), DH(EE), psk)
+    4. gw -> srv: <'key_conf', mac('key_conf', key_gw_srv)>
+
+*/
+
+theory pairing_module
+begin
+
+builtins: symmetric-encryption, multiset, diffie-hellman
+
+functions: mac/2, // Define a mac function
+           kdf1/1, kdf2/1, hkdf/1 // kdf functions for the HKDF
+
+equations:
+    // mac(m, k) = senc(m, k), // A mac is just a s-enc
+    hkdf(x) = <kdf1(x), kdf2(x)> // hkdf that returns two keys
+
+// Server creation. The server has no key material, just a name.
+rule Register_srv:
+    [ ]
+    -->
+    [!Server($ID)]
+
+// GW creation. Does the following:
+// 1. Create an asymetric and symetric key for the gateway
+// 2. Registers gateways public key in the PKI 
+rule Register_gw:
+    [ Fr(~asym), Fr(~sym)]
+    --[
+        A_gw_registered($gw_id, ~asym),
+        A_gw_rx_nonce($gw_id, $zero)
+    ]->
+    [
+        !Gateway($gw_id, ~asym, ~sym),
+        !Pk($gw_id, 'g'^~asym),
+        !Gw_received_srv_nonce($gw_id, $zero)
+        // Gw_key_established($gw_id, <~dummy_key, ~dummy_key>) // Dummy key state to be replaced at the end of the handshake.
+        ]
+
+restriction gw_registered_only_once:
+    " All gw1 asym1 asym2 #i1 #i2.
+        A_gw_registered(gw1, asym1)@i1 & A_gw_registered(gw1, asym2)@i2
+        ==> #i1 = #i2 
+    "
+
+rule Reveal_gw:
+    [!Gateway(gw_id, asym, sym)]
+    --[A_reveal(gw_id)]->
+    [Out(<gw_id, asym, sym>)]
+
+
+// Public key retrieval from PKI
+rule Get_pk:
+    [ !Pk(A, pubkey) ]
+    -->
+    [ Out(pubkey) ]
+
+///////////////////////////////////////////////////////////////////////
+// PAIRING
+///////////////////////////////////////////////////////////////////////
+
+// When the server scans the device, it permanently learns
+// - the static public key and
+// - the symetric key
+rule Scan_device:
+    [!Gateway(gw_id, ~asym_S, ~sym), !Server(srv_id)]
+    --[A_Device_scanned(gw_id, srv_id)]->
+    [
+        !Srv_device_scan(srv_id, gw_id, 'g'^~asym_S, ~sym)
+    ]
+
+restriction device_scanned_once_per_gw:
+    " All gw_id srv_id #i1 #i2.
+    A_Device_scanned(gw_id, srv_id)@i1 & A_Device_scanned(gw_id, srv_id)@i2
+        ==> #i1 = #i2 
+    "
+
+// Rule modeling the adversary beeing able to scan the device
+rule Scan_device_adversary:
+    [!Gateway(gw_id, ~asym_S, ~sym)]
+    --[A_device_scanned_adversary(gw_id)]->
+    [Out(<'g'^~asym_S, ~sym>)]
+
+// Start the Gateway pairing process:
+// - Generate ephemeral asymetric key and send it out
+rule Pairing_1_us:
+    [!Gateway(gw_id, ~asym_S, ~sym), Fr(~gw_asym_E)]
+    --[A_button_pushed(gw_id, ~gw_asym_E)]->
+    [Gw_pairing_initiated(gw_id, ~gw_asym_E),
+        Out(<'pairing_us', 'g'^~gw_asym_E, mac('g'^~gw_asym_E, ~sym)>)]
+
+// Modeling the abortion of the pairing process
+// This rule is mainly added to make be paired with constraints to avoid recursion
+rule Abort_pairing_gw:
+    [Gw_pairing_initiated(gw_id, ~gw_asym_E)]
+    --[A_gw_pairing_clear(gw_id, ~gw_asym_E),
+       A_gw_pairing_abort(gw_id, ~gw_asym_E)]->
+    []
+
+// Modeling the button press timing out
+rule Pairing_button_timeout:
+    [Gw_pairing_initiated(gw_id, ~gw_asym_E)]
+    --[A_gw_pairing_clear(gw_id, ~gw_asym_E),
+       A_gw_pairing_abort(gw_id, ~gw_asym_E),
+       A_gw_button_timeout(gw_id,~gw_asym_E)]->
+    []
+
+restriction gw_no_concurent_pairing:
+    " All gw_id tid1 tid2 #i1 #i2.
+        A_button_pushed(gw_id, tid1) @i1 & A_button_pushed(gw_id, tid2) @i2 & i1 < i2
+        ==> (
+                Ex #j. (
+                    A_gw_pairing_clear(gw_id, tid1) @#j
+                    // & i1 < j
+                    & j < i2
+                )
+        )
+    "
+
+// Rule that models gw forgetting key, used to ensure
+// that only one key can be active at once. Works together with
+// a restriction below.
+rule Drop_key_gw:
+    [!Gw_key_established(gw_id, session_keys)]
+    --[ Keys_not_dropped(gw_id, session_keys),
+        A_gw_dropped_keys(gw_id, session_keys)]->
+    []
+
+restriction gw_only_one_active_key:
+    " All gw_id tid1 tid2 session_keys1 session_keys2 #i1 #i2.
+    A_gw_established_key(gw_id, tid1, session_keys1) @i1 & A_gw_established_key(gw_id, tid2, session_keys2) @i2 & i1 < i2
+        ==> (
+                Ex #j. (
+                    A_gw_dropped_keys(gw_id, session_keys1) @j
+                    // & i1 < j
+                    & j < i2
+                )
+        )
+    "
+
+// Now, the server can receive the pairing_SU message. When it does so it:
+// 1. Generates a new server thread
+// 2. Stores the received ephemeral key
+// 3. Respond with a pairing_su message
+rule Pairing_2_su:
+    let
+        session_keys = hkdf(<gw_pub_S^~srv_asym_E, gw_pub_E^~srv_asym_E, ~gw_sym>)
+    in
+    [
+        !Server(srv_id), // the server exists
+        In(<'pairing_us', gw_pub_E,  mac(gw_pub_E, ~gw_sym)>), // there is a pairing_su message
+        !Srv_device_scan(srv_id, gw_id, gw_pub_S, ~gw_sym), // the device was scanned by the gw before
+        Fr(~srv_asym_E) // Generate an ephermal public key
+    ]
+    --[
+        A_srv_established_key(srv_id, gw_id, session_keys)]->
+    [
+        Srv_key_established(srv_id, gw_id, session_keys),
+        Out(<'pairing_su', 'g'^~srv_asym_E, mac(<gw_pub_E, 'g'^~srv_asym_E>, ~gw_sym)>)
+    ]
+
+rule Pairing_3_gw_receive:
+    let
+        session_keys = hkdf(<srv_pub_E^~gw_asym_S, srv_pub_E^~gw_asym_E, ~sym>)
+        key_us = fst(session_keys)
+        key_su = snd(session_keys)
+        challenge_mac = mac(<'auth_us', '0', '0', 'key_confirmation'>, key_us)
+        pairing_su_message = <'pairing_su', srv_pub_E, mac(<'g'^~gw_asym_E, srv_pub_E>, ~sym)>
+    in
+    [
+        !Gateway(gw_id, ~gw_asym_S, ~sym),
+        Gw_pairing_initiated(gw_id, ~gw_asym_E),
+        In(pairing_su_message)
+        // Gw_key_established(gw_id, dummy_keys)
+    ]
+    --[
+        A_gw_established_key(gw_id, ~gw_asym_E, session_keys),
+        A_gw_pairing_clear(gw_id, ~gw_asym_E)
+    ]->
+    [
+        !Gw_key_established(gw_id, session_keys),
+        Out(<'auth_us', '0', '0', 'key_confirmation', challenge_mac>)
+    ]
+
+rule Pairing_4_srv_key_confirmation:
+    let 
+        gw_mac = mac(<'auth_us', '0', '0', 'key_confirmation'>, key_us)
+    in
+    [
+        Fr(~server_random),
+        Srv_key_established(srv_id, gw_id, <key_us, key_su>),
+        In(<'auth_us', '0', '0', 'key_confirmation', gw_mac>)
+    ] --[   Claim_secret(srv_id, <key_us, key_su>), A_honest(gw_id),
+            A_srv_confirmed_key(srv_id, gw_id, <key_us, key_su>)
+        ]->
+    [
+        !Srv_key_confirmed(srv_id, gw_id, <key_us, key_su>)
+    ]
+
+lemma executable_pairing: // [heuristic=c]:
+    exists-trace
+    "
+    Ex srv_id gw_id  gw_tid keys #i #j. (
+        A_srv_confirmed_key(srv_id, gw_id, keys) @i
+        & A_gw_established_key(gw_id, gw_tid, keys) @j
+    )
+    "
+
+lemma executable_repairing: //[heuristic=s]:
+    exists-trace
+    "
+    Ex srv_id_1 srv_id_2 gw_id keys_1 keys_2 #i #k.
+    (
+        A_srv_confirmed_key(srv_id_1, gw_id, keys_1) @i
+        & A_srv_confirmed_key(srv_id_2, gw_id, keys_2) @k
+        & i < k
+    )
+    "
+
+lemma abort_pairing:
+    exists-trace
+    "
+    Ex srv_id gw_id tid_1 tid_2 keys #i #j #k #l #m.
+    (
+        A_button_pushed(gw_id, tid_1) @ i
+        & A_button_pushed(gw_id, tid_2) @ j
+        & i < j
+        & A_gw_pairing_abort(gw_id, tid_1) @k
+        & A_gw_established_key(gw_id, tid_2, keys) @l
+        & A_srv_confirmed_key(srv_id, gw_id, keys) @m
+    )
+    "
+
+// PAIR-1
+lemma gw_authentication:
+    "
+    All srv_id gw_id session_keys #i.
+        A_srv_confirmed_key(srv_id, gw_id, session_keys) @#i // whenever a server confirmed a key with a gw
+        ==> (
+            Ex gw_tid #j. (
+                A_gw_established_key(gw_id, gw_tid, session_keys) @#j // the gateway gw actually established the key
+                & #j < #i
+            )    
+        ) | Ex #r. (
+            A_reveal(gw_id) @ #r // Or the gateway gw was compromised
+            & #r < #i
+        )
+    "
+
+ // This is the main lema from the GW's perspective. GW establishes a key --> there is a server that scanned the device
+ // and that has established the same key.
+ // PAIR-2
+lemma weak_manager_authentication:
+"
+All gw_id gw_tid session_keys #i.
+A_gw_established_key(gw_id, gw_tid, session_keys) @ #i // Whenever a gw establishes a key
+==> (
+    Ex srv_id #j #k. ( // there exists a server
+        A_srv_established_key(srv_id, gw_id, session_keys) @ #j // that also establish that key
+        & A_Device_scanned(gw_id, srv_id) @ #k // and that has scanned the device
+        & #k < #j // at a previous time.
+    ) & (not Ex #l. K(session_keys) @l) // and the adversary cannot know the key
+    ) 
+| (Ex #r. A_reveal(gw_id) @r & r<i) // unless the gw was compromised before
+| (Ex #s. A_device_scanned_adversary(gw_id) @s & s<i) // or the adversary scanned the key before
+"   
+
+// PAIR-3
+lemma key_secrecy:
+"
+All claimer_id secret #i.
+    Claim_secret(claimer_id, secret) @i
+    ==> (
+        not (Ex #j. K(secret) @j)
+        | (Ex claimee_id #k. A_reveal(claimee_id) @k & A_honest(claimee_id) @i)
+    )
+ "
+
+// PAIR-4
+lemma verification_intend:
+"
+All gw_id gw_tid session_keys #i.
+A_gw_established_key(gw_id, gw_tid, session_keys) @ #i // Whenever a gw establishes a key
+==> (
+    Ex gw_tid2 #j. (
+        A_button_pushed(gw_id, gw_tid2) @j // The button on the gw was pressed
+    ) & (not Ex #k. A_gw_button_timeout(gw_id, gw_tid2) @k & #k < #i) // the button press has not timed out.
+)
+"
+
+end

@@ -1,0 +1,68 @@
+theory DiffieHellman_PCS_Sent
+begin
+
+builtins: diffie-hellman, symmetric-encryption, signing
+functions: h/1, kdf/2
+
+/* --- Setup --- */
+rule Initialize_Identities:
+  [ Fr(~skA), Fr(~skB) ]
+  --[ Unique() ]->
+  [ !Ltk($A, ~skA), !Pk($A, pk(~skA)),
+    !Ltk($B, ~skB), !Pk($B, pk(~skB)),
+    Out(pk(~skA)), Out(pk(~skB)) ]
+
+rule Initialize_Shared_State:
+  [ Fr(~rk0) ]
+  --[ Unique() ]->
+  [ State_Shared($A, $B, ~rk0) ]
+
+/* --- PHASE 1: The Compromise (Backward Secrecy Target) --- */
+rule Attacker_Leads_RK:
+    [ State_Shared(A, B, rk0) ]
+  --[ Compromise(A, B) ]->
+    [ Out(rk0), State_Alice(A, B, rk0), State_Bob(A, B, rk0) ]
+
+/* --- PHASE 2: The Healing --- */
+rule Alice_Send_DH:
+    [ State_Alice(A, B, rk0), !Ltk(A, skA), Fr(~a) ]
+  -->
+    [ Out(<'g'^~a, sign('g'^~a, skA)>), St_Alice_1(A, B, rk0, ~a) ]
+
+rule Alice_Complete_Healing_And_Send:
+    [ St_Alice_1(A, B, rk0, ~a), In(<gb, sigB>), !Pk(B, pkB), Fr(~secret_msg) ]
+  --[ Eq(verify(sigB, gb, pkB), true),
+      Heal(A, B, h(kdf(rk0, gb^~a))),
+      Send(A, B, ~secret_msg) // Tracking the specific sent message
+    ]->
+    [ Out(senc(~secret_msg, h(kdf(rk0, gb^~a)))) ]
+
+rule Bob_Healing_Step:
+    [ State_Bob(A, B, rk0), In(<ga, sigA>), !Ltk(B, skB), !Pk(A, pkA), Fr(~b) ]
+  --[ Eq(verify(sigA, ga, pkA), true),
+      Heal(A, B, h(kdf(rk0, ga^~b)))
+    ]->
+    [ Out(<'g'^~b, sign('g'^~b, skB)>) ]
+
+/* --- Restrictions --- */
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+restriction OnlyOnce:
+  "All #i #j. Unique() @ i & Unique() @ j ==> #i = #j"
+
+/* --- Updated Lemma --- */
+// Logic: If the attacker knows message 'm', and 'm' was sent by A to B 
+// under a key that was Healed, then a Compromise MUST have occurred AFTER the Send.
+lemma PCS_Property_With_Sent_Msg:
+  all-traces
+  "All A B m rk #i #l #s.
+    ( K(m) @ i &             // Attacker knows the message
+      Send(A, B, m) @ s &    // The message was sent
+      Heal(A, B, rk) @ l &   // The key used was healed
+      #s = #l                // The send and healing happened in the same step
+    )
+    ==> 
+    ( Ex #k. Compromise(A, B) @ k & s < k )" // Compromise must be later than the send
+
+end

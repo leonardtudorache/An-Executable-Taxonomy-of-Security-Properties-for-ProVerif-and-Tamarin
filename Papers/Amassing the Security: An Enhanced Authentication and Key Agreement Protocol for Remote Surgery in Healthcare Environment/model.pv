@@ -1,0 +1,163 @@
+(* channel *)
+free ch :channel. (* public channel *)
+free sch :channel [private]. (* secure channel, used for registering *)
+
+(* shared keys *)
+free SKi : bitstring [private].
+free SKj : bitstring [private].
+free SKk : bitstring [private].
+free IDi : bitstring [private].
+
+(* constants *)
+free x:bitstring [private].
+
+(* functions & reductions & equations *)
+fun h(bitstring) :bitstring. (* hash function *)
+fun mult(bitstring,bitstring) :bitstring. (* scalar multiplication operation *)
+fun add(bitstring,bitstring):bitstring. (* Addition operation *)
+fun sub(bitstring,bitstring):bitstring. (* Subtraction operation *)
+fun mod(bitstring,bitstring):bitstring. (* modulus operation *)
+fun con(bitstring,bitstring):bitstring. (* concatenation operation *)
+fun xor(bitstring,bitstring):bitstring. (* XOR operation *)
+fun Gen(bitstring):bitstring. (* Generator operation *)
+fun Rep(bitstring,bitstring):bitstring.
+
+reduc forall m:bitstring, n:bitstring; getmess(con(m,n))=m.
+equation forall m:bitstring, n:bitstring; xor(xor(m,n),n)=m.
+
+(* events *)
+event SurgeonStarted().
+event SurgeonAuthed().
+event GatewayAcSurgeon().
+event RMAcGateway().
+event GatewayAcRM().
+event SurgeonAcGateway().
+
+(* queries *)
+query attacker(SKi).
+query attacker(SKj).
+query attacker(SKk).
+query inj-event(SurgeonAuthed()) ==> inj-event(SurgeonStarted()).
+query inj-event(RMAcGateway()) ==> inj-event(GatewayAcSurgeon()).
+query inj-event(GatewayAcRM()) ==> inj-event(RMAcGateway()).
+query inj-event(SurgeonAcGateway()) ==> inj-event(GatewayAcRM()).
+
+(* Surgeon's process *)
+let ProcessSurgeon =
+    new IDi:bitstring; new PWi: bitstring;
+    new Bio: bitstring; new ai:bitstring;
+    let (a: bitstring, b: bitstring) = Gen(Bio) in
+    let RPWi = h(con(PWi,ai)) in
+    let Ai = h(con(con(IDi,RPWi),a)) in
+    let TRPWi = h(con(RPWi,a)) in
+    out(sch,(IDi, TRPWi));
+    in(sch,(xBi:bitstring,xDi:bitstring,xX:bitstring));
+    !event SurgeonStarted();
+    let a = Rep(Bio,b) in 
+    let RPWi = h(con(PWi,ai)) in
+    let Ai = h(con(con(IDi,RPWi),a)) in
+    if Ai = Ai then 
+        new r1:bitstring;
+        new T1:bitstring; new IDk:bitstring; new IDj:bitstring;
+        let TRPWi = h(con(RPWi,a)) in
+        let g = xor(xBi,TRPWi) in 
+        let bi = xor(xDi,TRPWi) in
+        let x = xor(xX,h(con(bi,TRPWi))) in
+        let C1 = xor(IDi,h(con(IDk,x))) in
+        let C2 = xor(IDj,h(con(h(con(IDi,x)),i)))in
+        let C3 = xor(r1,h(con(bi,IDi))) in
+        let C4 = h(con(con(con(con(r1,IDi),IDj),bi),T1)) in
+        out(ch,(xBi,xDi,C1,C2,C3,C4,T1)); 
+        event SurgeonAuthed();
+        in(ch,(xC10:bitstring,xC11:bitstring,xC12:bitstring,xC13:bitstring,xT4:bitstring)); 
+        let r3 = xor(xC10,h(con(r1,IDj))) in
+        let r2 = xor(xC11,h(con(TRPWi,r1))) in
+        let q = xor(xC12,h(con(bi,xDi))) in
+        let SKi = h(con(con(con(r1,r2),r3),q)) in
+        let C13p = h(con(con(con(SKi,r2),r3),xT4)) in
+        if C13p = xC13 then event SurgeonAcGateway().
+
+(* Gateway's process *)
+let ProcessGateway =
+    new IDk:bitstring; new IDj:bitstring;
+    out(sch,(IDk));
+    in(sch,(yGx:bitstring,ydk:bitstring));
+    new cj:bitstring;
+    let x = xor(h(con(IDk,ydk)),yGx) in
+    let Ej = h(con(IDj,x)) in 
+    let Fj = xor(cj,Ej) in
+    !in(ch,(yBi:bitstring,yDi:bitstring,yC1:bitstring,yC2:bitstring,
+           yC3:bitstring,yC4:bitstring,yT1:bitstring));
+    let x = xor(h(con(IDk,ydk)),yGx) in 
+    let IDi = xor(yC1,h(con(IDk,x))) in
+    let TRPWi = xor(yBi,h(con(IDi,x))) in
+    let bi = xor(yDi,TRPWi) in
+    let IDj = xor(yC2,h(con(h(con(IDi,x)),bi))) in
+    let r1 = xor(yC3,h(con(bi,IDi))) in
+    let C4p = h(con(con(con(con(r1,IDj),IDj),bi),yT1)) in
+    if C4p = yC4 then 
+        event GatewayAcSurgeon();
+        new r2:bitstring; new T2:bitstring;
+        let Ej = h(con(IDj,x)) in 
+        let cj = xor(Fj,Ej) in
+        let PIDj = h(con(IDj,cj)) in 
+        let C5 = xor(r2,PIDj) in
+        let C6 = h(con(con(con(PIDj,r2),cj),T2)) in
+        let C7 = xor(r1,h(con(r2,cj))) in 
+        let q = h(con(bi,cj)) in
+        let C8 = xor(q,h(con(IDj,r2))) in 
+        out(ch,(C5,C6,C7,C8,T2));
+        in(ch,(yC9:bitstring,yC10:bitstring,yT3:bitstring));
+        let r3 = xor(yC10,h(con(r1,IDj))) in
+        let SKk = h(con(con(con(r1,r2),r3),q)) in
+        let C9p = h(con(con(SKk,q),yT3)) in
+        if C9p = yC9 then 
+            event GatewayAcRM();
+            new T4:bitstring;
+            let C11 = xor(r2,h(con(TRPWi,r1))) in
+            let C12 = xor(q,h(con(bi,yDi))) in
+            let C13 = h(con(con(con(SKk,r2),r3),T4)) in
+            out(ch,(C10,C11,C12,C13,T4)).
+
+(* RM's process *)
+let ProcessRoboticArm =
+    new IDj:bitstring;
+    out(sch,(IDj)); out(sch,(IDj));
+    in(sch,(zEj:bitstring,zFj:bitstring));
+    in(ch,(zC5:bitstring,zC6:bitstring,zC7:bitstring,zC8:bitstring,zT2:bitstring));
+    let cj = xor(zFj,zEj) in
+    let PIDj = h(con(IDj,cj)) in 
+    let r2 = xor(zC5,PIDj) in
+    let C6p = h(con(con(con(PIDj,r2),cj),zT2)) in
+    if C6p = zC6 then 
+        event RMAcGateway();
+        new r3:bitstring; new T3:bitstring;
+        let r1 = xor(zC7,h(con(r2,cj))) in
+        let q = xor(zC8,h(con(IDj,r2))) in
+        let SKj = h(con(con(con(r1,r2),r3))) in
+        let C9 = h(con(con(SKj,q),T3)) in
+        let C10 = xor(r3,h(con(r1,IDj))) in
+        out(ch,(C9,C10,T3)).
+
+(* TA's process *)
+let SurgeonReg =
+    in(sch,(mIDi:bitstring,mTRPWi:bitstring));
+    new bi:bitstring;
+    let X = xor(x,h(con(bi,mTRPWi))) in
+    let g = h(con(mIDi,x)) in
+    let Bi = xor(g,mTRPWi) in
+    let Di = xor(bi,mTRPWi) in
+    out(sch,(Bi,Di,X)).
+
+let GatewayReg =
+    in(sch,(mIDk:bitstring));
+    new dk:bitstring;
+    let Gk = h(con(mIDk,dk)) in
+    let Sx = xor(Gk,x) in 
+    out(sch,(Sx,dk)).
+
+let ProcessTA = SurgeonReg | GatewayReg.
+
+(* Main process *)
+process
+(!ProcessSurgeon | !ProcessGateway | !ProcessRoboticArm | !ProcessTA)

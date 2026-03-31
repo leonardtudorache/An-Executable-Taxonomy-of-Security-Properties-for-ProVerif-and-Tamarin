@@ -1,0 +1,232 @@
+theory persistence_module
+begin
+
+builtins: symmetric-encryption, multiset
+
+functions: mac/2 // Define a mac function
+
+rule Register_gw:
+    []
+    --[A_gw_registered($gw_id)]->
+    [
+        !Gateway($gw_id)
+    ]
+
+restriction gw_registered_once:
+"
+    All gw_id #i1 #i2. A_gw_registered(gw_id)@i1 & A_gw_registered(gw_id)@i2
+        ==> #i1 = #i2
+" 
+
+// Pair the GW
+rule Pairing:
+    let
+        session_keys = <key_us, key_su>
+    in
+    [
+        Fr(key_us),
+        Fr(key_su),
+        !Gateway($gw_id)
+    ]
+    --[
+        A_gw_paired($gw_id, session_keys),
+        A_srv_paired($srv_id, $gw_id, session_keys)
+    ]->
+    [
+        !Gw_key_established($gw_id, session_keys),
+        !Srv_key_confirmed($srv_id, $gw_id, session_keys),
+        Srv_counter($srv_id, $gw_id, session_keys, '1')
+    ]    
+
+rule Reveal_gw:
+    [!Gw_key_established(gw_id, session_keys)]
+    --[A_reveal(gw_id)]->
+    [Out(<gw_id, session_keys>)]
+
+// Rule that models gw forgetting key, used to ensure
+// that only one key can be active at once. Works together with
+// the restrictions below.
+rule Drop_key_gw:
+    [
+        !Gw_key_established(gw_id, session_keys)
+    ]
+    --[ Keys_not_dropped(gw_id, session_keys),
+        A_gw_dropped_keys(gw_id, session_keys)]->
+    []
+
+restriction KeysNotDropped:
+    "
+    All gw_id session_keys #i. Keys_not_dropped(gw_id, session_keys)@i
+        ==> not Ex #j. (A_gw_dropped_keys(gw_id, session_keys) @j & j < i)
+    "
+
+restriction gw_only_one_active_key:
+    " All gw_id session_keys1 session_keys2 #i1 #i2.
+    A_gw_paired(gw_id, session_keys1) @i1 & A_gw_paired(gw_id, session_keys2) @i2 & i1 < i2
+        ==> (
+                Ex #j. (
+                    A_gw_dropped_keys(gw_id, session_keys1) @j
+                    & j < i2
+                )
+        )
+    "
+
+///////////////////////////////////////////////////////////////////////
+// Reboot
+///////////////////////////////////////////////////////////////////////
+
+rule Gw_reboot:
+    [!Gateway(gw_id)]
+    --[
+        Forget_all_nonces(gw_id),
+        A_gw_rebooted(gw_id)
+    ]->
+    []
+
+///////////////////////////////////////////////////////////////////////
+// Persistance
+///////////////////////////////////////////////////////////////////////
+
+rule generate_dummy_nonce:
+    [
+        !Gateway(gw_id),
+        Fr(~nonce_id)
+    ] --[A_gw_rx_nonce(gw_id, $zero, ~nonce_id)]->
+    [
+        !Gw_nonce(gw_id, $zero, ~nonce_id)
+    ]
+
+rule drop_nonce:
+    [
+        !Gw_nonce(gw_id, nonce, nonce_id)
+    ] --[A_gw_dropped_nonce(gw_id, nonce, nonce_id)]->
+    []
+
+
+rule srv_send_nonce:
+    let
+        session_keys = <key_us, key_su>
+    in
+    [
+        !Srv_key_confirmed(srv_id, gw_id, session_keys),
+        Fr(~new_nonce)
+    ] --[
+        Keys_not_dropped(gw_id, session_keys),
+        A_srv_tx_nonce(srv_id, gw_id, ~new_nonce)
+    ]->
+    [
+        Out(<~new_nonce, mac(~new_nonce, key_su)>)
+    ]
+
+rule gw_receive_nonce:
+    let
+        session_keys = <key_us, key_su>
+    in
+    [
+        !Gw_key_established(gw_id, session_keys),
+        In(<new_nonce, mac(new_nonce, key_su)>),
+        Fr(~nonce_id)
+    ] --[
+        Forget_all_nonces(gw_id),
+        Keys_not_dropped(gw_id, session_keys),
+        A_gw_rx_nonce(gw_id, new_nonce, ~nonce_id)
+    ]->
+    [
+        !Gw_nonce(gw_id, new_nonce, ~nonce_id)
+    ]    
+
+rule gw_send_nonce:
+    let
+        session_keys = <key_us, key_su>
+    in
+    [
+        !Gw_key_established(gw_id, session_keys),
+        !Gw_nonce(gw_id, nonce, nonce_id)
+    ] --[
+        A_gw_tx_nonce(gw_id, nonce, nonce_id),
+        Nonce_not_dropped(gw_id, nonce, nonce_id)
+    ]->
+    [
+        Out(<nonce, mac(nonce, key_us)>)
+    ]  
+
+restriction nonce_not_dropped:
+    "
+    All gw_id nonce nonce_id #i.
+        Nonce_not_dropped(gw_id, nonce, nonce_id)@i
+        ==> not Ex #j. A_gw_dropped_nonce(gw_id, nonce, nonce_id) @j & #j < #i
+    "
+
+restriction forget_all_nonces:
+    "
+    All gw_id #i. Forget_all_nonces(gw_id) @i
+        ==> All nonce nonce_id #j.
+            A_gw_rx_nonce(gw_id, nonce, nonce_id) @j & #j < #i
+                ==> Ex #k. A_gw_dropped_nonce(gw_id, nonce, nonce_id) @k & #k < #i
+    "
+
+rule srv_receive_nonce:
+    let
+        session_keys = <key_us, key_su>
+    in
+    [
+        !Srv_key_confirmed(srv_id, gw_id, session_keys),
+        In(<nonce, mac(nonce, key_us)>)
+    ] --[
+        A_srv_rx_nonce(srv_id, gw_id, nonce)
+    ]->
+    [
+    ]
+
+lemma server_can_rx_nonce:
+    exists-trace
+    "
+    Ex srv_id gw_id nonce #i.
+        A_srv_rx_nonce(srv_id, gw_id, nonce) @i
+    "
+
+lemma server_can_rx_nonce_without_tx:
+    exists-trace
+    "
+    Ex srv_id gw_id nonce #i.
+        A_srv_rx_nonce(srv_id, gw_id, nonce) @i
+        & not Ex tx_nonce #j. A_srv_tx_nonce(srv_id, gw_id, tx_nonce) @j
+    "
+
+lemma server_can_rx_own_nonce:
+    exists-trace
+    "
+    Ex srv_id gw_id nonce #i #j.
+        A_srv_tx_nonce(srv_id, gw_id, nonce) @i
+        & A_srv_rx_nonce(srv_id, gw_id, nonce) @j
+        & #i < #j
+    "
+
+lemma server_must_tx_before_rx:
+    "
+    All srv_id gw_id nonce #i #j.
+        A_srv_tx_nonce(srv_id, gw_id, nonce) @i
+        & A_srv_rx_nonce(srv_id, gw_id, nonce) @j
+        ==> #i < #j
+    "
+
+lemma retroactive_aliveness:
+    "
+    All srv_id gw_id nonce #i #j.
+        A_srv_tx_nonce(srv_id, gw_id, nonce) @i
+        & A_srv_rx_nonce(srv_id, gw_id, nonce) @j
+        ==> (
+            Ex #p session_keys. (
+                A_gw_paired(gw_id, session_keys) @p
+                & A_srv_paired(srv_id, gw_id, session_keys) @p
+                & #p < #i
+                & (
+                    All #d. A_gw_dropped_keys(gw_id, session_keys) @d
+                        ==> #i < #d
+                )
+            )
+        )    
+    "
+
+
+end

@@ -1,0 +1,133 @@
+(* Types and channels *)
+free c1:channel.
+free c2:channel.
+
+type TS.
+type User.
+type GWN.
+type Sensor.
+type Biometric.
+
+free sensor : Sensor.
+free GWN : GWN.
+free user : User.
+
+(* Cryptographic functions *)
+fun Hash(bitstring): bitstring.
+fun conK(bitstring,K): bitstring.
+fun XOR(bitstring, bitstring): bitstring.
+fun con(bitstring,bitstring): bitstring.
+fun conTS(bitstring,TS): bitstring.
+
+(* Security queries *)
+query attacker(new HID_U_SN).
+query attacker(new SK).
+
+event GAccept(User).
+event GWNAccept(User).
+event SensorData(User, Server).
+event GWNData(Sensor).
+event UserData(Server, Sensor).
+
+query inj-event(UserData(server, sensor))
+==> inj-event(GWNData(sensor)).
+query inj-event(GWNData(sensor))
+==> inj-event(SensorData(user, server)).
+query inj-event(SensorData(user, server))
+==> inj-event(GWNAccept(user)).
+query event(GWNAccept(user))
+==> event(GAccept(user)).
+
+
+(* User Process *)
+let userProcess(ID_U: bitstring, PW_U: bitstring,biometric:Biometric, X_U: bitstring,Y_U: bitstring,tau : bitstring,
+ID_S : bitstring, sigma : bitstring, Q_U : bitstring, R_U : bitstring, P_o : bitstring, M : bitstring,
+C : bitstring, K_S : bitstring) =
+new user: User;
+new T_4 : TS;
+new T_1: TS;
+new S_k: bitstring;
+new a_1 : bitstring;
+new n : bitstring;
+new R : bitstring;
+let sigma_n = Hash(con(sigma,n))in
+let b = XOR(Y_U,hash(con(con(ID_U,PW_U),sigma_n)))in
+let HPW = hash(con(PW_U,b)) in
+let HID = hash(con(ID_U,b)) in
+if X_U = Hash(con(HID,HPW)) then
+event GAccept(user);
+let HID_S = hash(con(ID_S,n)) in
+let P_I = Hash(con(HID,P_o)) in
+let UID_1 = XOR(HID,M) in
+let W = hash(con(con(con(UID_1,Q_U),P_I),T_1)) in
+out(ch1,(UID_1,Q_U,W,T_1));
+in (ch1,(L : bitstring,O :bitstring,D : bitstring,T_3 : TS,T_4 : TS));
+let T_n = hash(con(P_I,C)) in
+let K_S = XOR(O,Hash(con(HID_S,T_n))) in
+let SK = hash(con(T_n,HID_S),hash(conTS(con(K_S,T_1),T_3))) in
+if L = hash(conTS(con(SK,HID_S),T_3)) then
+let SK = hash(con(T_n,HID_S),hash(conTS(con(K_S,T_1),T_3))) in
+event UserData(server,sensor).
+
+(* GWN Process *)
+let GWNProcess(ID_S : bitstring,K_S : bitstring,R : bitstring, C : bitstring) =
+new user: User;
+new sensor: Sensor;
+new m: bitstring;
+new T_2: TS;
+in(ch1,(UID_1 : bitstring,Q_U : bitstring,W : bitstring,T_1 : TS));
+let HID = XOR(UID_1,R) in
+let P_I = Hash(con(HID,P_o)) in
+let HID_S = hash(con(ID_S,m)) in
+if W = hash(con(con(con(UID_1,Q_U),P_I),T_1)) then
+event GWNAccept(user);
+let D= hash(con(P_I,C)) in
+let T_n = hash(con(P_I,C)) in
+let F = XOR(T_n,Hash(conTS(conTS(K_S,T_2),T_1))) in
+let J= Hash(conTS(conTS(con(con(T_n,ID_U),HID_S),T_2),T_1)) in
+event GWNData(sensor);
+out(ch1,(F,J,T_2,T_1));
+in (ch1,(L : bitstring,O :bitstring,D : bitstring,T_3 : TS));
+let SK = hash(con(T_n,HID_S),hash(conTS(conTS(K_S,T_1),T_3))) in
+if L = hash(conTS(con(SK,HID_S),T_3)) then
+event GWNAccept(sensor);
+out(ch1,(L,O,D,T_3,T_4));
+
+(* Sensor Process *)
+let sensorProcess(ID_S: bitstring,K_S: bitstring) =
+new server : Server;
+new user: User;
+new T_3: TS;
+new w: bitstring;
+in(ch2,(F : bitstring,J : bitstring,T_2 : TS,T_1 : TS));
+let T_n = XOR(F,Hash(conTS(conTS(K_S,T_2),T_1))) in
+if J= Hash(conTS(conTS(con(con(T_n,ID_U),HID_S),T_2),T_1)) then
+let SK = hash(con(T_n,HID_S),hash(conTS(conTS(K_S,T_1),T_3))) in
+let L = hash(conTS(con(SK,HID_S),T_3)) in
+let O = XOR(hash(con(HID_S,T_n)),hash(K_S)) in
+event SensorData(user, server);
+out(ch2,(L,O,T_3)).
+
+
+
+(* Main process *)
+process
+new ID_U: bitstring;
+new PW_U: bitstring;
+new sigma : bitstring;
+new tau : bitstring;
+new X_U: bitstring;
+new Y_U: bitstring;
+new biometric : bitstring;
+new Q_U : bitstring;
+new R_U : bitstring;
+new P_o : bitstring;
+new M : bitstring;
+new C : bitstring;
+new K_S : bitstring;
+new ID_S : bitstring;
+(
+  (!userProcess(ID_U,PW_U,biometric,X_U,Y_U,tau,ID_S,sigma,Q_U,R_U,P_o,M,C,K_S)) |
+  (!GWNProcess(ID_S,K_S,R,C)) |
+  (!sensorProcess(ID_S,K_S))
+)

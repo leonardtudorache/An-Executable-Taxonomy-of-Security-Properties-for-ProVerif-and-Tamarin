@@ -1,0 +1,154 @@
+(*==============================*)
+(*         Free Names          *)
+(*==============================*)
+free chn1: channel.
+
+type Vehicle.
+type RSU.
+type TA.
+type nonce.
+type timestamp.
+
+(*-- Basic Variables --*)
+free IDi: bitstring [private].         (* Vehicle identity *)
+free PWi: bitstring [private].         (* Vehicle password *)
+free y: bitstring [private].           (* TA secret key *)
+free Y: bitstring.                     (* TA public key *)
+free sj: bitstring [private].          (* RSU secret key *)
+free SKv: bitstring [private].         (* Vehicle session key *)
+free SKrsu: bitstring [private].       (* RSU session key *)
+free IDj: bitstring.                   (* RSU identity *)
+free P: bitstring.                     (* Base point *)
+free Pj: bitstring.                    (* RSU public key *)
+free k: bitstring [private].           (* Shared secret between RSU and TA *)
+
+free vehicle: Vehicle.
+free rsu: RSU.
+
+(*==============================*)
+(*         Functions            *)
+(*==============================*)
+fun Hash(bitstring): bitstring.
+fun bit_timestamp(timestamp): bitstring.
+fun bit_nonce(nonce): bitstring.
+fun XOR(bitstring, bitstring): bitstring.
+fun Con(bitstring, bitstring): bitstring.
+fun Enc(bitstring, bitstring): bitstring.
+fun Dec(bitstring, bitstring): bitstring.
+fun EccMul(bitstring, bitstring): bitstring.
+fun EccSub(bitstring, bitstring): bitstring.
+fun Add(bitstring, bitstring): bitstring.
+fun Mul(bitstring, bitstring): bitstring.
+fun checktimestampfresh(bitstring, bool): bool.
+
+(*==============================*)
+(*         Equations            *)
+(*==============================*)
+equation forall x1: bitstring, y1: bitstring;
+  XOR(XOR(x1, y1), y1) = x1.
+
+reduc forall x2: bitstring, y2: bitstring;
+  Split(Con(x2, y2)) = (x2, y2).
+
+reduc forall T: bitstring;
+  checktimestampfresh(T, true) = true.
+
+reduc forall T: bitstring;
+  checktimestampfresh(T, false) = false.
+
+(*==============================*)
+(*           Events             *)
+(*==============================*)
+event VLoginPhase(Vehicle).
+event VAuthenticationPhase(Vehicle).
+event VehicleSessionKey(Vehicle).
+event RSUAuthentication(RSU).
+event RSUSessionKey(RSU).
+
+(*==============================*)
+(*           Queries            *)
+(*==============================*)
+query attacker(SKrsu).
+query attacker(SKv).
+query attacker(y).
+query attacker(PWi).
+
+query inj-event(VAuthenticationPhase(vehicle)) ==> inj-event(VLoginPhase(vehicle)).
+query inj-event(RSUAuthentication(rsu)) => inj-event(VAuthenticationPhase(vehicle)).
+query inj-event(VehicleSessionKey(vehicle)) ==> inj-event(RSUAuthentication(rsu)).
+query inj-event(RSUSessionKey(rsu)) ==> inj-event(VehicleSessionKey(vehicle)).
+
+(*==============================*)
+(*      Vehicle Process         *)
+(*==============================*)
+let VehicleProcess(IDi: bitstring, IDj: bitstring, PWi: bitstring,
+                   Ai: bitstring, Bi: bitstring, Ci: bitstring, Di: bitstring,
+                   P: bitstring, Pj: bitstring) =
+
+  let HPWi = Hash(Con(IDi, PWi)) in
+  let Ri = XOR(Ai, HPWi) in
+  let xi = XOR(Bi, Hash(Ri)) in
+  let RPWi = XOR(HPWi, Hash(xi)) in
+  let B = XOR(Ci, Hash(Con(xi, Ri))) in
+  let RIDi = Hash(Con(IDi, Con(RPWi, Ri))) in
+
+  if Di = Hash(Hash(Con(RIDi, xi))) then
+    event VLoginPhase(vehicle);
+    new bvi: nonce;
+    new Time1: timestamp;
+    let bi = bit_nonce(bvi) in
+    let T1 = bit_timestamp(Time1) in
+    let Pij = EccMul(bi, Pj) in
+    let Pi = EccMul(bi, P) in
+    let M1 = XOR(RIDi, Hash(Con(IDj, Con(Pij, T1)))) in
+    let M2 = XOR(B, Hash(Con(RIDi, Con(T1, Pij)))) in
+    let M3 = XOR(Ri, Hash(Con(RIDi, Pij))) in
+    let M4 = Hash(Con(RIDi, Con(B, Con(Ri, Con(Pij, T1))))) in
+
+    event VAuthenticationPhase(vehicle);
+    out(chn1, (M1, M2, M3, M4, Pi, T1));
+
+    in(chn1, (M5: bitstring, M6: bitstring, Qj: bitstring, T2: bitstring));
+    if checktimestampfresh(T2, true) then
+      let Qij = EccMul(bi, Qj) in
+      let TIDi = XOR(M5, Hash(Con(Qij, RIDi))) in
+      let SKij = Hash(Con(Qij, Con(TIDi, RIDi))) in
+      if M6 = Hash(Con(SKij, T2)) then
+        event VehicleSessionKey(vehicle)
+      else 0.
+
+(*==============================*)
+(*         RSU Process          *)
+(*==============================*)
+let RSUProcess(IDj: bitstring, sj: bitstring, k: bitstring,
+               P: bitstring, Y: bitstring) =
+
+  in(chn1, (M1: bitstring, M2: bitstring, M3: bitstring,
+            M4: bitstring, Pi: bitstring, T1: bitstring));
+
+  if checktimestampfresh(T1, true) then
+    let Pij = EccMul(Pi, sj) in
+    let RIDi = XOR(M1, Hash(Con(IDj, Con(Pij, T1)))) in
+    let B = XOR(M2, Hash(Con(RIDi, Con(T1, Pij)))) in
+    let Ri = XOR(M3, Hash(Con(RIDi, Pij))) in
+    let nR = EccSub(EccMul(B, P), EccMul(Hash(Con(RIDi, Ri)), Y)) in
+
+    if Hash(Con(RIDi, nR)) = Hash(Con(RIDi, Ri)) then
+      if M4 = Hash(Con(RIDi, Con(B, Con(Ri, Con(Pij, T1))))) then
+        event RSUAuthentication(rsu);
+        new brj: nonce;
+        new nrj: nonce;
+        new Time2: timestamp;
+        let T2 = bit_timestamp(Time2) in
+        let bj = bit_nonce(brj) in
+        let nj = bit_nonce(nrj) in
+        let Qij = EccMul(bj, Pi) in
+        let Qj = EccMul(bj, P) in
+        let TIDi = XOR(RIDi, Hash(Con(nj, k))) in
+        let M5 = XOR(TIDi, Hash(Con(Qij, RIDi))) in
+        let Skij = Hash(Con(Qij, Con(TIDi, RIDi))) in
+        let M6 = Hash(Con(Skij, T2)) in
+
+        event RSUSessionKey(rsu);
+        out(chn1, (M5, M6, Qj, T2)).
+        

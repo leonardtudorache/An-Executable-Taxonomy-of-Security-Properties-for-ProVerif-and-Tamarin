@@ -1,0 +1,151 @@
+(* Channels *)
+free Secure_Fog_User_Channel: channel [private].       (* Secure Channel *)
+free Public_Fog_User_Channel: channel.                  (* Public Channel *)
+free Secure_Fog_Blockchain_Channel: channel [private].  (* Secure Channel *)
+free Public_Fog_Blockchain_Channel: channel.            (* Public Channel *)
+
+(* Data Types *)
+type skey.
+type pkey.
+type timestamp.
+type np_array.
+type int.
+
+(* Variables *)
+free ID_i, B_i, msk, Y1, Y2, Y4, Y5, Y6, X1, X2, X3, Dt: bitstring.
+free sigma_i, theta_i: np_array [private].
+free Tu, Ts, Tc: timestamp.
+free rn_i, token_i, Y3: bitstring [private].
+
+(* Asymmetric Encryption and Decryption *)
+fun pk(skey): pkey.
+fun aEncryption(bitstring, pkey): bitstring.
+reduc forall m: bitstring, k: skey;
+  aDecryption(aEncryption(m, pk(k)), k) = m.
+
+(* Events *)
+event beginAuth1(np_array).
+event endAuth1(np_array).
+event beginAuth2(bitstring).
+event endAuth2(bitstring).
+
+(* Functions *)
+fun Hash(bitstring): bitstring.
+fun Concatenation1(bitstring, bitstring): bitstring.
+fun Concatenation2(bitstring, bitstring, bitstring): bitstring.
+fun Concatenation3(bitstring, np_array): bitstring.
+fun Concatenation4(bitstring, bitstring, np_array): bitstring.
+fun Concatenation5(bitstring, timestamp): bitstring.
+fun Concatenation6(bitstring, bitstring, np_array): bitstring.
+fun Concatenation7(bitstring, skey): bitstring.
+fun Generate_Biometric_Keys(bitstring): np_array.
+fun Reproduce_Biometric_Key(bitstring, np_array): np_array.
+fun Generate_ID(): bitstring.
+fun XOR(bitstring, bitstring): bitstring.
+fun Time_Delay(timestamp, timestamp): int.
+
+(* Queries *)
+query sigma_i: np_array;
+  inj-event(endAuth1(sigma_i)) ==> inj-event(beginAuth1(sigma_i)).
+
+query attacker(sigma_i).
+
+query token_i: bitstring;
+  inj-event(endAuth2(token_i)) ==> inj-event(beginAuth2(token_i)).
+
+query attacker(token_i).
+
+query Y3: bitstring;
+  inj-event(endAuth2(Y3)) ==> inj-event(beginAuth2(Y3)).
+
+query attacker(Y3).
+
+(* Fog *)
+let Fog(skeyFog: skey, pkeyFog: pkey, Ts: timestamp) =
+  let ID_i = Generate_ID() in
+  let temp1 = Hash(Concatenation3(ID_i, sigma_i)) in
+  let Y1 = Hash(Concatenation7(temp1, skeyFog)) in
+  let Y2 = Hash(Concatenation1(rn_i, temp1)) in
+  let Y3 = XOR(Y1, Y2) in
+  let Y4 = aEncryption(token_i, pkeyFog) in
+  let Y5 = Hash(Concatenation4(Y3, ID_i, sigma_i)) in
+  out(Public_Fog_User_Channel, (ID_i, Y3, Y4));
+  out(Secure_Fog_Blockchain_Channel, (Y1, Y5));
+
+  in(Public_Fog_User_Channel, (X1_new: bitstring, X2: bitstring, Y4: bitstring, Tu: timestamp));
+  (* let Td = Time_Delay(Ts, Tu) in *)
+  (* if Td < Dt then *)
+  let X2_new = Hash(Concatenation5(X1_new, Tu)) in
+
+  if X2 = X2_new then
+    let token_i = aDecryption(Y4, skeyFog) in
+    let Y2_new = Hash(Concatenation1(X1_new, rn_i)) in
+    let Y1_new = Hash(Concatenation1(rn_i, Hash(X1_new))) in
+
+    out(Public_Fog_Blockchain_Channel, (Y1_new));
+    in(Public_Fog_Blockchain_Channel, (Y1: bitstring, Y5: bitstring));
+
+    if Y1_new = Y1 then
+      let Y3_new = XOR(Y1, Y2_new) in
+      let SK = Concatenation5(Y3_new, Ts) in
+      let Y6 = Hash(SK) in
+
+      out(Public_Fog_User_Channel, (Y6, Ts));
+      in(Public_Fog_User_Channel, (Y5_new: bitstring, X3: bitstring, Tu: timestamp));
+      (* let Td = Time_Delay(Ts, Tu) in *)
+      (* if Td < Dt then *)
+      let X3_new = Hash(Concatenation5(Y6, Tu)) in
+
+      if X3_new = X3 && Y5_new = Y5 then
+        event endAuth1(sigma_i);
+        event endAuth2(token_i);
+        event endAuth2(Y3)
+      else 0.
+
+(* User *)
+let User(B_i: bitstring, Tu: timestamp) =
+  let sigma_i = Generate_Biometric_Keys(B_i) in
+  let theta_i = Generate_Biometric_Keys(B_i) in
+
+  out(Secure_Fog_User_Channel, (sigma_i));
+  in(Secure_Fog_User_Channel, (ID_i: bitstring, Y3: bitstring, Y4: bitstring));
+
+  let sigma_i = Reproduce_Biometric_Key(B_i, theta_i) in
+  let X1 = Hash(Concatenation3(ID_i, sigma_i)) in
+  let X2 = Hash(Concatenation5(X1, Tu)) in
+
+  out(Public_Fog_User_Channel, (X1, X2, Y4, Tu));
+  in(Public_Fog_User_Channel, (Y6: bitstring, Ts: timestamp));
+
+  (* let Tds = Time_Delay(Ts, Tu) in
+     let Tdss : nat = Tds in
+     let Tds = to_nat(Td) in
+     if Tdss < Dt then event beginAuth(sigma_i); *)
+
+  let Y6_new = Hash(Concatenation5(Y3, Ts)) in
+  if Y6 = Y6_new then
+    let Y5_new = Hash(Concatenation4(Y3, ID_i, sigma_i)) in
+    let X3 = Hash(Concatenation5(Y6_new, Tu)) in
+
+    out(Public_Fog_User_Channel, (Y5_new, X3, Tu));
+    event beginAuth1(sigma_i);
+    event beginAuth2(token_i);
+    event beginAuth2(Y3).
+
+(* Blockchain *)
+let Blockchain() =
+  in(Secure_Fog_Blockchain_Channel, (Y1: bitstring, Y5: bitstring));
+  out(Public_Fog_Blockchain_Channel, (Y1, Y5)).
+
+(* Main Process *)
+process
+  new pkeyFog: pkey;
+  new skeyFog: skey;
+  new Bi: bitstring;
+  (* new Dt: bitstring; *)
+  new Tu: timestamp;
+  new Ts: timestamp;
+
+  !User(Bi, Tu)
+  | !Fog(skeyFog, pkeyFog, Ts)
+  | !Blockchain()

@@ -1,0 +1,197 @@
+set expandIfTermsToTerms = true.
+set traceBacktracking = false.
+set reconstructTrace = false.
+set attacker = active.
+type principal.
+type stage.
+const principal_Imd:principal.
+const principal_Securitymanager:principal.
+const phase_0:stage.
+const empty:bitstring [data].
+table valuestore(principal, principal, bitstring, bitstring).
+const const_g:bitstring.
+const const_nil:bitstring.
+const const_k:bitstring [private].
+const const_s:bitstring [private].
+const const_m:bitstring [private].
+const const_init:bitstring.
+const const_public_imd:bitstring [private].
+const const_alpha:bitstring [private].
+const const_beta:bitstring [private].
+const const__mac:bitstring [private].
+const const_unnamed_0:bitstring [private].
+const const_nonce:bitstring [private].
+const const_s_prime:bitstring [private].
+const const_e2:bitstring [private].
+const const__s_prime:bitstring [private].
+const const__beta:bitstring [private].
+const const_unnamed_1:bitstring [private].
+const const_hash1:bitstring [private].
+const const_hash2:bitstring [private].
+const const_hash3:bitstring [private].
+const const_hash4:bitstring [private].
+const const_hash5:bitstring [private].
+const const__hash1:bitstring [private].
+const const__hash2:bitstring [private].
+const const__hash3:bitstring [private].
+const const__hash4:bitstring [private].
+const const__hash5:bitstring [private].
+
+letfun ASSERT(a:bitstring, b:bitstring) = a = b.
+fun CONCAT2(bitstring, bitstring):bitstring [data].
+fun CONCAT3(bitstring, bitstring, bitstring):bitstring [data].
+fun CONCAT4(bitstring, bitstring, bitstring, bitstring):bitstring [data].
+fun CONCAT5(bitstring, bitstring, bitstring, bitstring, bitstring):bitstring [data].
+fun SPLIT(bitstring):bitstring reduc forall a:bitstring, b:bitstring;
+        SPLIT(CONCAT2(a, b)) = (a, b)
+otherwise forall a:bitstring, b:bitstring, c:bitstring;
+        SPLIT(CONCAT3(a, b, c)) = (a, b, c)
+        otherwise forall a:bitstring, b:bitstring, c:bitstring, d:bitstring;
+        SPLIT(CONCAT4(a, b, c, d)) = (a, b, c, d)
+        otherwise forall a:bitstring, b:bitstring, c:bitstring, d:bitstring, e:bitstring;
+        SPLIT(CONCAT5(a, b, c, d, e)) = (a, b, c, d, e).
+fun exp(bitstring, bitstring):bitstring.
+equation forall a:bitstring, b:bitstring;
+        exp(b, exp(a, const_g)) = exp(a, exp(b, const_g)).
+fun HASH1(bitstring):bitstring.
+fun HASH2(bitstring, bitstring):bitstring.
+fun HASH3(bitstring, bitstring, bitstring):bitstring.
+fun HASH4(bitstring, bitstring, bitstring, bitstring):bitstring.
+fun HASH5(bitstring, bitstring, bitstring, bitstring, bitstring):bitstring.
+fun MAC(bitstring, bitstring): bitstring.
+
+fun ENC(bitstring, bitstring):bitstring.
+fun DEC(bitstring, bitstring):bitstring reduc
+        forall k:bitstring, m:bitstring;
+        DEC(k, ENC(k, m)) = m
+        otherwise forall k:bitstring, m:bitstring;
+        DEC(k, m) = empty.
+
+const pub:channel.
+const chan_Imd_to_Securitymanager:channel.
+const chan_Imd_to_Securitymanager_private:channel [private].
+const chan_Securitymanager_to_Imd:channel.
+const chan_Securitymanager_to_Imd_private:channel [private].
+event SendMsg(principal, principal, stage, bitstring).
+event RecvMsg(principal, principal, stage, bitstring).
+
+query attacker(const_s).
+query attacker(const_m).
+query attacker(HASH1(CONCAT3(const_s, const_nonce, const_alpha))).
+query attacker(const_nonce).
+query attacker(HASH1(HASH1(HASH1(HASH1(HASH1(HASH1(CONCAT3(const_s, const_nonce, const_alpha)))))))).
+
+query event(RecvMsg(principal_Securitymanager, principal_Imd, phase_0, const_alpha)) ==> event(SendMsg(principal_Securitymanager, principal_Imd, phase_0, const_alpha)).
+query event(RecvMsg(principal_Securitymanager, principal_Imd, phase_0, const_beta)) ==> event(SendMsg(principal_Securitymanager, principal_Imd, phase_0, const_beta)).
+query event(RecvMsg(principal_Securitymanager, principal_Imd, phase_0, const__mac)) ==> event(SendMsg(principal_Securitymanager, principal_Imd, phase_0, const__mac)).
+query event(RecvMsg(principal_Imd, principal_Securitymanager, phase_0, const_e2)) ==> event(SendMsg(principal_Imd, principal_Securitymanager, phase_0, const_e2)).
+
+let Imd_0() =
+        let (Imd_public_imd:bitstring) = exp(const_k, const_g) in
+        insert valuestore(principal_Imd, principal_Imd, const_public_imd, Imd_public_imd);
+        0.
+let Imd_to_Securitymanager_1() =
+        get valuestore(=principal_Imd, =principal_Imd, =const_public_imd, Imd_public_imd) in
+        event SendMsg(principal_Imd, principal_Securitymanager, phase_0, const_public_imd);
+        out(pub, Imd_public_imd);
+        out(chan_Imd_to_Securitymanager_private, (Imd_public_imd));
+        0.
+let Securitymanager_from_Imd_2() =
+        in(chan_Imd_to_Securitymanager_private, (Imd_public_imd:bitstring));
+        event RecvMsg(principal_Imd, principal_Securitymanager, phase_0, const_public_imd);
+        insert valuestore(principal_Imd, principal_Securitymanager, const_public_imd, Imd_public_imd);
+        0.
+let Securitymanager_3() =
+        let (Securitymanager__mac:bitstring) = MAC(const_m, CONCAT3(const_init, const_alpha, const_beta)) in
+        insert valuestore(principal_Securitymanager, principal_Securitymanager, const__mac, Securitymanager__mac);
+        0.
+let Securitymanager_to_Imd_4() =
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const_alpha, const_alpha) in
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const_beta, const_beta) in
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const__mac, Securitymanager__mac) in
+        event SendMsg(principal_Securitymanager, principal_Imd, phase_0, const_alpha);
+        event SendMsg(principal_Securitymanager, principal_Imd, phase_0, const_beta);
+        event SendMsg(principal_Securitymanager, principal_Imd, phase_0, const__mac);
+        out(chan_Securitymanager_to_Imd, (const_alpha));
+        out(chan_Securitymanager_to_Imd, (const_beta));
+        out(chan_Securitymanager_to_Imd, (Securitymanager__mac));
+        0.
+let Imd_from_Securitymanager_5() =
+        in(chan_Securitymanager_to_Imd, (const_alpha:bitstring));
+        in(chan_Securitymanager_to_Imd, (const_beta:bitstring));
+        in(chan_Securitymanager_to_Imd, (Securitymanager__mac:bitstring));
+        event RecvMsg(principal_Securitymanager, principal_Imd, phase_0, const_alpha);
+        insert valuestore(principal_Securitymanager, principal_Imd, const_alpha, const_alpha);
+        event RecvMsg(principal_Securitymanager, principal_Imd, phase_0, const_beta);
+        insert valuestore(principal_Securitymanager, principal_Imd, const_beta, const_beta);
+        event RecvMsg(principal_Securitymanager, principal_Imd, phase_0, const__mac);
+        insert valuestore(principal_Securitymanager, principal_Imd, const__mac, Securitymanager__mac);
+        0.
+let Imd_6() =
+        get valuestore(=principal_Securitymanager, =principal_Imd, =const__mac, Securitymanager__mac) in
+        get valuestore(=principal_Securitymanager, =principal_Imd, =const_alpha, Securitymanager_alpha) in
+        get valuestore(=principal_Securitymanager, =principal_Imd, =const_beta, Securitymanager_beta) in
+        if ASSERT(Securitymanager__mac, MAC(const_m, CONCAT3(const_init, Securitymanager_alpha, Securitymanager_beta))) = true then
+        let (Imd_unnamed_0:bool) = ASSERT(Securitymanager__mac, MAC(const_m, CONCAT3(const_init, Securitymanager_alpha, Securitymanager_beta))) in
+        get valuestore(=principal_Securitymanager, =principal_Imd, =const_alpha, Securitymanager_alpha) in
+        let (Imd_s_prime:bitstring) = HASH1(CONCAT3(const_s, const_nonce, Securitymanager_alpha)) in
+        insert valuestore(principal_Imd, principal_Imd, const_s_prime, Imd_s_prime);
+        get valuestore(=principal_Imd, =principal_Imd, =const_s_prime, Imd_s_prime) in
+        get valuestore(=principal_Securitymanager, =principal_Imd, =const_beta, Securitymanager_beta) in
+        let (Imd_e2:bitstring) = ENC(const_s, CONCAT2(Imd_s_prime, Securitymanager_beta)) in
+        insert valuestore(principal_Imd, principal_Imd, const_e2, Imd_e2);
+        0.
+let Imd_to_Securitymanager_7() =
+        get valuestore(=principal_Imd, =principal_Imd, =const_e2, Imd_e2) in
+        event SendMsg(principal_Imd, principal_Securitymanager, phase_0, const_e2);
+        out(chan_Imd_to_Securitymanager, (Imd_e2));
+        0.
+let Securitymanager_from_Imd_8() =
+        in(chan_Imd_to_Securitymanager, (Imd_e2:bitstring));
+        event RecvMsg(principal_Imd, principal_Securitymanager, phase_0, const_e2);
+        insert valuestore(principal_Imd, principal_Securitymanager, const_e2, Imd_e2);
+        0.
+let Securitymanager_9() =
+        get valuestore(=principal_Imd, =principal_Securitymanager, =const_e2, Imd_e2) in
+        let (Securitymanager__s_prime:bitstring, Securitymanager__beta:bitstring) = SPLIT(DEC(const_s, Imd_e2)) in
+        insert valuestore(principal_Securitymanager, principal_Securitymanager, const__s_prime, Securitymanager__s_prime);
+        insert valuestore(principal_Securitymanager, principal_Securitymanager, const__beta, Securitymanager__beta);
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const__beta, Securitymanager__beta) in
+        if ASSERT(const_beta, Securitymanager__beta) = true then
+        let (Securitymanager_unnamed_1:bool) = ASSERT(const_beta, Securitymanager__beta) in
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const__s_prime, Securitymanager__s_prime) in
+        let (Securitymanager_hash1:bitstring) = HASH1(Securitymanager__s_prime) in
+        insert valuestore(principal_Securitymanager, principal_Securitymanager, const_hash1, Securitymanager_hash1);
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const_hash1, Securitymanager_hash1) in
+        let (Securitymanager_hash2:bitstring) = HASH1(Securitymanager_hash1) in
+        insert valuestore(principal_Securitymanager, principal_Securitymanager, const_hash2, Securitymanager_hash2);
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const_hash2, Securitymanager_hash2) in
+        let (Securitymanager_hash3:bitstring) = HASH1(Securitymanager_hash2) in
+        insert valuestore(principal_Securitymanager, principal_Securitymanager, const_hash3, Securitymanager_hash3);
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const_hash3, Securitymanager_hash3) in
+        let (Securitymanager_hash4:bitstring) = HASH1(Securitymanager_hash3) in
+        insert valuestore(principal_Securitymanager, principal_Securitymanager, const_hash4, Securitymanager_hash4);
+        get valuestore(=principal_Securitymanager, =principal_Securitymanager, =const_hash4, Securitymanager_hash4) in
+        let (Securitymanager_hash5:bitstring) = HASH1(Securitymanager_hash4) in
+        insert valuestore(principal_Securitymanager, principal_Securitymanager, const_hash5, Securitymanager_hash5);
+        0.
+let Imd_10() =
+        get valuestore(=principal_Imd, =principal_Imd, =const_s_prime, Imd_s_prime) in
+        let (Imd__hash1:bitstring) = HASH1(Imd_s_prime) in
+        insert valuestore(principal_Imd, principal_Imd, const__hash1, Imd__hash1);
+        get valuestore(=principal_Imd, =principal_Imd, =const__hash1, Imd__hash1) in
+        let (Imd__hash2:bitstring) = HASH1(Imd__hash1) in
+        insert valuestore(principal_Imd, principal_Imd, const__hash2, Imd__hash2);
+        get valuestore(=principal_Imd, =principal_Imd, =const__hash2, Imd__hash2) in
+        let (Imd__hash3:bitstring) = HASH1(Imd__hash2) in
+        insert valuestore(principal_Imd, principal_Imd, const__hash3, Imd__hash3);
+        get valuestore(=principal_Imd, =principal_Imd, =const__hash3, Imd__hash3) in
+        let (Imd__hash4:bitstring) = HASH1(Imd__hash3) in
+        insert valuestore(principal_Imd, principal_Imd, const__hash4, Imd__hash4);
+        get valuestore(=principal_Imd, =principal_Imd, =const__hash4, Imd__hash4) in
+        let (Imd__hash5:bitstring) = HASH1(Imd__hash4) in
+        insert valuestore(principal_Imd, principal_Imd, const__hash5, Imd__hash5);
+        0.
+process (
+        (Imd_0() | Imd_to_Securitymanager_1() | Securitymanager_from_Imd_2() | Securitymanager_3() | Securitymanager_to_Imd_4() | Imd_from_Securitymanager_5() | Imd_6() | Imd_to_Securitymanager_7() | Securitymanager_from_Imd_8() | Securitymanager_9() | Imd_10())
+)

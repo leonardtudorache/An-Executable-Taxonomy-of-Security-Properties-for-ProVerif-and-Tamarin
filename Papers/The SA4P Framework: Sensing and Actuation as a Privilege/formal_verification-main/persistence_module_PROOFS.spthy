@@ -1,0 +1,343 @@
+theory persistence_module begin
+
+// Function signature and definition of the equational theory E
+
+builtins: multiset
+functions: fst/1, mac/2, pair/2, sdec/2, senc/2, snd/1
+equations:
+    fst(<x.1, x.2>) = x.1,
+    sdec(senc(x.1, x.2), x.2) = x.1,
+    snd(<x.1, x.2>) = x.2
+
+
+
+rule (modulo E) Register_gw:
+   [ ] --[ A_gw_registered( $gw_id ) ]-> [ !Gateway( $gw_id ) ]
+
+  /* has exactly the trivial AC variant */
+
+restriction gw_registered_once:
+  "∀ gw_id #i1 #i2.
+    ((A_gw_registered( gw_id ) @ #i1) ∧
+     (A_gw_registered( gw_id ) @ #i2)) ⇒
+    (#i1 = #i2)"
+  // safety formula
+
+rule (modulo E) Pairing:
+   [ Fr( key_us ), Fr( key_su ), !Gateway( $gw_id ) ]
+  --[
+  A_gw_paired( $gw_id, <key_us, key_su> ),
+  A_srv_paired( $srv_id, $gw_id, <key_us, key_su> )
+  ]->
+   [
+   !Gw_key_established( $gw_id, <key_us, key_su> ),
+   !Srv_key_confirmed( $srv_id, $gw_id, <key_us, key_su> ),
+   Srv_counter( $srv_id, $gw_id, <key_us, key_su>, '1' )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Reveal_gw:
+   [ !Gw_key_established( gw_id, session_keys ) ]
+  --[ A_reveal( gw_id ) ]->
+   [ Out( <gw_id, session_keys> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Drop_key_gw:
+   [ !Gw_key_established( gw_id, session_keys ) ]
+  --[
+  Keys_not_dropped( gw_id, session_keys ),
+  A_gw_dropped_keys( gw_id, session_keys )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+restriction KeysNotDropped:
+  "∀ gw_id session_keys #i.
+    (Keys_not_dropped( gw_id, session_keys ) @ #i) ⇒
+    (¬(∃ #j.
+        (A_gw_dropped_keys( gw_id, session_keys ) @ #j) ∧ (#j < #i)))"
+  // safety formula
+
+restriction gw_only_one_active_key:
+  "∀ gw_id session_keys1 session_keys2 #i1 #i2.
+    (((A_gw_paired( gw_id, session_keys1 ) @ #i1) ∧
+      (A_gw_paired( gw_id, session_keys2 ) @ #i2)) ∧
+     (#i1 < #i2)) ⇒
+    (∃ #j.
+      (A_gw_dropped_keys( gw_id, session_keys1 ) @ #j) ∧ (#j < #i2))"
+
+rule (modulo E) Gw_reboot:
+   [ !Gateway( gw_id ) ]
+  --[ Forget_all_nonces( gw_id ), A_gw_rebooted( gw_id ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) generate_dummy_nonce:
+   [ !Gateway( gw_id ), Fr( ~nonce_id ) ]
+  --[ A_gw_rx_nonce( gw_id, $zero, ~nonce_id ) ]->
+   [ !Gw_nonce( gw_id, $zero, ~nonce_id ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) drop_nonce:
+   [ !Gw_nonce( gw_id, nonce, nonce_id ) ]
+  --[ A_gw_dropped_nonce( gw_id, nonce, nonce_id ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) srv_send_nonce:
+   [
+   !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su> ),
+   Fr( ~new_nonce )
+   ]
+  --[
+  Keys_not_dropped( gw_id, <key_us, key_su> ),
+  A_srv_tx_nonce( srv_id, gw_id, ~new_nonce )
+  ]->
+   [ Out( <~new_nonce, mac(~new_nonce, key_su)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) gw_receive_nonce:
+   [
+   !Gw_key_established( gw_id, <key_us, key_su> ),
+   In( <new_nonce, mac(new_nonce, key_su)> ), Fr( ~nonce_id )
+   ]
+  --[
+  Forget_all_nonces( gw_id ),
+  Keys_not_dropped( gw_id, <key_us, key_su> ),
+  A_gw_rx_nonce( gw_id, new_nonce, ~nonce_id )
+  ]->
+   [ !Gw_nonce( gw_id, new_nonce, ~nonce_id ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) gw_send_nonce:
+   [
+   !Gw_key_established( gw_id, <key_us, key_su> ),
+   !Gw_nonce( gw_id, nonce, nonce_id )
+   ]
+  --[
+  A_gw_tx_nonce( gw_id, nonce, nonce_id ),
+  Nonce_not_dropped( gw_id, nonce, nonce_id )
+  ]->
+   [ Out( <nonce, mac(nonce, key_us)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+restriction nonce_not_dropped:
+  "∀ gw_id nonce nonce_id #i.
+    (Nonce_not_dropped( gw_id, nonce, nonce_id ) @ #i) ⇒
+    (¬(∃ #j.
+        (A_gw_dropped_nonce( gw_id, nonce, nonce_id ) @ #j) ∧ (#j < #i)))"
+  // safety formula
+
+restriction forget_all_nonces:
+  "∀ gw_id #i.
+    (Forget_all_nonces( gw_id ) @ #i) ⇒
+    (∀ nonce nonce_id #j.
+      ((A_gw_rx_nonce( gw_id, nonce, nonce_id ) @ #j) ∧ (#j < #i)) ⇒
+      (∃ #k.
+        (A_gw_dropped_nonce( gw_id, nonce, nonce_id ) @ #k) ∧ (#k < #i)))"
+
+rule (modulo E) srv_receive_nonce:
+   [
+   !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su> ),
+   In( <nonce, mac(nonce, key_us)> )
+   ]
+  --[ A_srv_rx_nonce( srv_id, gw_id, nonce ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+lemma server_can_rx_nonce:
+  exists-trace
+  "∃ srv_id gw_id nonce #i.
+    A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #i"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ srv_id gw_id nonce #i.
+  (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #i)"
+*/
+simplify
+solve( !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su>
+       ) ▶₀ #i )
+  case Pairing
+  solve( !KU( mac(nonce, ~n) ) @ #vk.2 )
+    case gw_send_nonce_case_1
+    SOLVED // trace found
+  qed
+qed
+
+lemma server_can_rx_nonce_without_tx:
+  exists-trace
+  "∃ srv_id gw_id nonce #i.
+    (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #i) ∧
+    (¬(∃ tx_nonce #j. A_srv_tx_nonce( srv_id, gw_id, tx_nonce ) @ #j))"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ srv_id gw_id nonce #i.
+  (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #i)
+ ∧
+  ∀ tx_nonce #j.
+   (A_srv_tx_nonce( srv_id, gw_id, tx_nonce ) @ #j) ⇒ ⊥"
+*/
+simplify
+solve( !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su>
+       ) ▶₀ #i )
+  case Pairing
+  solve( !KU( mac(nonce, ~n) ) @ #vk.2 )
+    case gw_send_nonce_case_1
+    SOLVED // trace found
+  qed
+qed
+
+lemma server_can_rx_own_nonce:
+  exists-trace
+  "∃ srv_id gw_id nonce #i #j.
+    ((A_srv_tx_nonce( srv_id, gw_id, nonce ) @ #i) ∧
+     (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #j)) ∧
+    (#i < #j)"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ srv_id gw_id nonce #i #j.
+  (A_srv_tx_nonce( srv_id, gw_id, nonce ) @ #i) ∧
+  (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #j)
+ ∧
+  #i < #j"
+*/
+simplify
+solve( !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su>
+       ) ▶₀ #i )
+  case Pairing
+  solve( !Srv_key_confirmed( $srv_id, $gw_id, <key_us, key_su>
+         ) ▶₀ #j )
+    case Pairing
+    solve( (¬(#vr < #vr.2))  ∥
+           (∃ #j.
+             (A_gw_dropped_keys( $gw_id, <~n, ~n.1> ) @ #j) ∧ #j < #vr.2) )
+      case case_1
+      solve( (¬(#vr.2 < #vr))  ∥
+             (∃ #j.
+               (A_gw_dropped_keys( $gw_id, <~n.2, ~n.3> ) @ #j) ∧ #j < #vr) )
+        case case_1
+        solve( (#vr = #vr.2)  ∥ (#vr.2 < #vr) )
+          case case_1
+          solve( !KU( mac(~new_nonce, ~n) ) @ #vk.2 )
+            case c_mac
+            solve( !KU( ~n ) @ #vk.3 )
+              case Reveal_gw
+              solve( !KU( ~new_nonce ) @ #vk.3 )
+                case srv_send_nonce
+                SOLVED // trace found
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma server_must_tx_before_rx:
+  all-traces
+  "∀ srv_id gw_id nonce #i #j.
+    ((A_srv_tx_nonce( srv_id, gw_id, nonce ) @ #i) ∧
+     (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #j)) ⇒
+    (#i < #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ srv_id gw_id nonce #i #j.
+  (A_srv_tx_nonce( srv_id, gw_id, nonce ) @ #i) ∧
+  (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #j)
+ ∧
+  ¬(#i < #j)"
+*/
+simplify
+solve( !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su>
+       ) ▶₀ #i )
+  case Pairing
+  solve( !Srv_key_confirmed( $srv_id, $gw_id, <key_us, key_su>
+         ) ▶₀ #j )
+    case Pairing
+    solve( (¬(#vr < #vr.2))  ∥
+           (∃ #j.
+             (A_gw_dropped_keys( $gw_id, <~n, ~n.1> ) @ #j) ∧ #j < #vr.2) )
+      case case_1
+      solve( (¬(#vr.2 < #vr))  ∥
+             (∃ #j.
+               (A_gw_dropped_keys( $gw_id, <~n.2, ~n.3> ) @ #j) ∧ #j < #vr) )
+        case case_1
+        solve( (#vr = #vr.2)  ∥ (#vr.2 < #vr) )
+          case case_1
+          solve( !KU( ~new_nonce ) @ #vk.1 )
+            case srv_send_nonce
+            by contradiction /* cyclic */
+          qed
+        next
+          case case_2
+          by contradiction /* from formulas */
+        qed
+      next
+        case case_2
+        solve( (#vr = #vr.2)  ∥ (#vr.2 < #vr) )
+          case case_1
+          by contradiction /* from formulas */
+        next
+          case case_2
+          solve( !Gw_key_established( $gw_id, <~n.2, ~n.3> ) ▶₀ #j.1 )
+            case Pairing
+            solve( !KU( ~new_nonce ) @ #vk.1 )
+              case srv_send_nonce
+              by contradiction /* cyclic */
+            qed
+          qed
+        qed
+      qed
+    next
+      case case_2
+      by contradiction /* from formulas */
+    qed
+  qed
+qed
+
+lemma retroactive_aliveness:
+  all-traces
+  "∀ srv_id gw_id nonce #i #j.
+    ((A_srv_tx_nonce( srv_id, gw_id, nonce ) @ #i) ∧
+     (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #j)) ⇒
+    (∃ #p session_keys.
+      (((A_gw_paired( gw_id, session_keys ) @ #p) ∧
+        (A_srv_paired( srv_id, gw_id, session_keys ) @ #p)) ∧
+       (#p < #i)) ∧
+      (∀ #d.
+        (A_gw_dropped_keys( gw_id, session_keys ) @ #d) ⇒ (#i < #d)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ srv_id gw_id nonce #i #j.
+  (A_srv_tx_nonce( srv_id, gw_id, nonce ) @ #i) ∧
+  (A_srv_rx_nonce( srv_id, gw_id, nonce ) @ #j)
+ ∧
+  ∀ #p session_keys.
+   (A_gw_paired( gw_id, session_keys ) @ #p) ∧
+   (A_srv_paired( srv_id, gw_id, session_keys ) @ #p)
+  ⇒
+   ((¬(#p < #i)) ∨
+    (∃ #d.
+      (A_gw_dropped_keys( gw_id, session_keys ) @ #d) ∧ ¬(#i < #d)))"
+*/
+simplify
+solve( !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su>
+       ) ▶₀ #i )
+  case Pairing
+  by contradiction /* cyclic */
+qed
+
+/* All well-formedness checks were successful. */
+
+end

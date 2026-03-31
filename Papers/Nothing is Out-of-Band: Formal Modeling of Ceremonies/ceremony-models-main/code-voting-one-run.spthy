@@ -1,0 +1,299 @@
+theory code_voting_one_run begin
+
+// Setup Scenario
+rule setup:
+  [ 
+    New(Card,'paper')
+  , New(IntendedVote,'intention')
+  , New(Server,'server')
+  , New(candidate1,'inf'), New(code1,'inf')
+  , New(candidate2,'inf'), New(code2,'inf')
+  , New(Table,'table')
+  ]
+--[
+    Once('setup')
+  , Valid(code1), Valid(code2) // list of valid codes
+  , AssignType(<candidate1,code1>,'inf')
+  , AssignType(<candidate2,code2>,'inf')
+  ]->
+  [ // initial availability
+    Assign(IntendedVote,candidate2) // voter's intention
+  , Assign(Card,<candidate1,code1>)
+  , Assign(Card,<candidate2,code2>)
+  , Assign(Card,Server)
+  , Assign(Server,Table)
+  , Assign(Table,code1) // server knows codes stored in Table, but not candidate mapping
+  , Assign(Table,code2)
+  ]
+
+rule new:
+  [ Fr(~obj) ]
+--[ AssignType(~obj,$type), New(~obj,$type), Source(~obj) ]->
+  [ New(~obj,$type), !Some(~obj,$type) ]
+
+
+/* The following rule is embedded into all other rules that use it to reduce complexity
+   This produces the code-voting-automatic.spthy theory.
+*/
+rule assign: // Assign Object to Owner
+  [
+    Assign(Owner2,obj)
+  ]
+--[ Assign(Owner2,obj) ]->
+  [
+    Av(Owner2,obj), !Ref(Owner2,obj)
+  ]
+
+/* Transformations */
+
+/*
+   The following is a transformation where the recipient is the DY network.
+   Tamarin's knowledge inference rules act as the contextual ceremony
+*/
+rule dySEND: 
+  [ Av(sndr,m)
+  ,
+    Run1(sndr,'SEND',id1), Fr(id)
+  ]
+--[ T1(id)
+  , Type(m,'inf') // This rule accepts only objects of type 'inf'
+  , Type(sndr,'device')
+  , Incoming(sndr)
+  , Incoming(m)
+  ]->
+  [ Av(sndr,m)
+  , Out(<sndr,m>)
+  , 
+    Done1('SEND',id,id1,m)
+  ]
+
+/*
+   The following assigns the 'inf' type to everything that the DY network produces.
+*/
+rule typingDYknowledge:
+  [ In(info) ]
+--[ AssignType(info,'inf') ]->
+  [ ]
+
+/*
+   receive from DY network with a check: rec can only receive things available to checklist
+   See also dySEND rule above.
+*/
+rule dyVRECV: 
+  [ In(m)
+  , Av(rec,checklist) // rec has checklist
+  , Av(checklist,m)   // checklist has some information
+  ,
+    Run1(rec,'VRECV',id1), Run2(checklist,'VRECV',id2), Fr(id)
+  ]
+--[
+    T2(id), Type(m,'inf'), Type(rec,'server')
+  , Cast(m) // Signal
+  ]-> 
+  [ Av(rec,checklist), Assign(rec,m)
+  , Av(checklist,m)
+  ,
+    Done1('VRECV',id,id1,<checklist,m>), Done2('VRECV',id,id2,m)
+  ]
+
+rule SELECT:
+  [ Av(reader,card), Av(reader,inten)
+  , Av(card,<choice,value>)
+  , Av(inten,choice)
+  ,
+    Run1(reader,'SELECT',id1), Run2(card,'SELECT',id2), Run3(inten,'SELECT',id3), Fr(id)
+  ]
+--[
+    T3(id), Type(reader,'human'), Type(card,'paper'), Type(inten,'intention')
+  , Intended(reader,choice,value) // Signal 
+  ]->
+  [ Av(reader,card), Av(reader,inten), Assign(reader,value)
+  , Av(card,<choice,value>)
+  , Av(inten,choice)
+  ,
+    Done1('SELECT',id,id1,<card,inten,value>),
+    Done2('SELECT',id,id2,<choice,value>),
+    Done3('SELECT',id,id3,choice)
+  ]
+
+rule WRITE:
+  [ Av(writer,medium), Av(writer,data)
+  ,
+    Run1(writer,'WRITE',id1), Run2(medium,'WRITE',id2), Fr(id)
+  ]
+--[
+    T2(id), Type(writer,'human'), Type(medium,'device')
+  ]->
+  [ Av(writer,medium), Av(writer,data)
+  , Assign(medium,data)
+  ,
+    Done1('WRITE',id,id1,<medium,data>),
+    Done2('WRITE',id,id2,data)
+  ]
+
+/* Ceremony Role Specification */
+
+// Voter's ceremony role and create rule
+rule CreateVoter:
+  [ Fr(run)
+  , !Some(v,'human'), !Some(p,'paper'), !Some(i,'intention'), !Some(c,'device')
+  ]
+--[ Once('CreateVoter'), Voter0() ]->
+  [ Assign(v,p), Assign(v,i), Assign(v,c) // Assume (v,p), (v,i), (v,c) are in AV_0
+  , St_V1(run,v,p,i,c), Run1(v,'SELECT',run)
+  ]
+
+rule Voter1:
+  [ St_V1(run,v,p,i,c),
+    Done1('SELECT',id,run,<p,i,code>)
+  ]
+--[ Transform1(id), Secret(i) ]-> // The voter's vote is claimed to be secret
+  [ St_V2(run,v,p,i,c,code), Run1(v,'WRITE',run) ]
+
+rule Voter2:
+  [ St_V2(run,v,p,i,c,code), 
+    Done1('WRITE',id,run,<c,code>)
+  ]
+--[ Transform1(id) ]->
+  [ 
+  ]
+
+// Other agents' ceremony role and create rules
+rule CreateCardRun:
+  [ Fr(run)
+  , !Some(p,'paper')
+  ]
+--[ Once('CreateCard'), Card0() ]->
+  [ // AV_0 assumptions made in setup
+    St_Card1(run,p), Run2(p,'SELECT',run)
+  ]
+
+rule Card1:
+  [ St_Card1(run,p), Done2('SELECT',id,run,<candidate,code>) 
+  ]
+--[ Transform2(id) ]->
+  [   ]
+
+rule CreateIntentionRun:
+  [ Fr(run)
+  , !Some(i,'intention')
+  ]
+--[ Once('CreateIntention'), Intention0() ]->
+  [ // AV_0 assumptions made in setup
+    St_I1(run,i), Run3(i,'SELECT',run)
+  ]
+
+rule Intention1:
+  [ St_I1(run,i), Done3('SELECT',id,run,choice)
+  ]
+--[ Transform3(id) ]->
+  [  ]
+
+rule CreateComputerRun:
+  [ Fr(run)
+  , !Some(c,'device')
+  ]
+--[ Once('CreateComputer'), Computer0() ]->
+  [ // no AV_0 assumptions 
+    St_Computer1(run,c), Run2(c,'WRITE',run)
+  ]
+  
+rule Computer1:
+  [ St_Computer1(run,c), Done2('WRITE',id,run,m) 
+  ]
+--[ Type(m,'inf'), Transform2(id) ]->
+  [ St_Computer2(run,c,m), Run1(c,'SEND',run)
+  ]
+
+rule Computer2:
+  [ St_Computer2(run,c,m), Done1('SEND',id,run,m) 
+  ]
+--[ 
+    Transform1(id)
+  ]->
+  [ 
+  ]
+
+rule CreateServerRun:
+  [ Fr(run)
+  , !Some(s,'server'), !Some(Table,'table')
+  ]
+--[ Once('CreateServer'), Server0() ]->
+  [ // (s,Table) is in AV_0 is done in Setup
+    St_Server1(run,s,Table), Run1(s,'VRECV',run)
+  ]
+
+rule Server1:
+  [ St_Server1(run,~s,~Table), Done1('VRECV',id,run,<~Table,~m>)
+  ]
+--[ Type(~m,'inf'), Transform1(id), Success(~s,~m) ]->
+  [ 
+  ]
+
+
+rule CreateChecklistRun:
+  [ Fr(run)
+  , !Some(l,'table')
+  ]
+--[ Once('CreateChecklist'), Table0() ]->
+  [ // AV_0 assumptions made in setup
+    St_Table1(run,l), Run2(l,'VRECV',run)
+  ]
+
+
+rule Checklist1:
+  [ St_Table1(run,l), Done2('VRECV',id,run,code) 
+  ]
+--[ Transform2(id) ]->
+  [ 
+  ]
+
+// END of ceremony role specification
+
+restriction well_typed: // Ensure that claimed types have been previously assigned
+  "All Ag Obj #i. Type(Ag,Obj)@i ==> Ex #j. AssignType(Ag,Obj)@j & j < i"
+
+restriction transformation:
+  "
+  All id #i.
+  T2(id)@i
+   ==>
+  Ex #j. Transform1(id)@j &
+  Ex #k. Transform2(id)@k 
+  "
+
+restriction transformation3:
+  "
+  All id #i.
+  T3(id)@i
+   ==>
+  Ex #j. Transform1(id)@j &
+  Ex #j. Transform2(id)@j &
+  Ex #j. Transform3(id)@j
+  "
+
+restriction once:
+  "All a #i #j. Once(a)@i & Once(a)@j ==> #i=#j"
+
+lemma typing [sources,heuristic=C]: 
+"All x #i. Incoming(x)@i ==> (Ex #j. Source(x)@j)"
+
+lemma functional [heuristic=s]: // The ceremony can be executed as intended
+  exists-trace
+  "Ex A c #i. Success(A,c)@i
+  & (All #j #k. Voter0()@j & Voter0()@k ==> #j=#k)
+  & (All #j #k. Card0()@j & Card0()@k ==> #j=#k)
+  & (All #j #k. Computer0()@j & Computer0()@k ==> #j=#k)
+  & (All #j #k. Server0()@j & Server0()@k ==> #j=#k)
+  & (All #j #k. Intention0()@j & Intention0()@k ==> #j=#k)
+  "
+
+lemma integrity [heuristic=S]: // Server accepts only valid codes
+  " All A c #i. Success(A,c)@i ==> Ex #j. Valid(c)@j  "
+
+lemma secrecy [heuristic=s]: // Voter's vote is confidential
+  " All v #i #j. Secret(v)@i & !KU(v)@j ==> F"
+
+lemma cast_as_intended [heuristic=s]: // equation (11)
+  " All code #i. Cast(code)@i ==> Ex v cand #j. j < i & Intended(v,cand,code)@j "
+end

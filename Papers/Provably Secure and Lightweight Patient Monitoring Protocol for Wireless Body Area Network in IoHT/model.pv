@@ -1,0 +1,113 @@
+(* --Channel-- *)
+free PC:channel [private]. (*Public channel*)
+
+(* --Types-- *)
+type key.
+type nonce.
+type timestamp.
+
+(* --Constants&Variables-- *)
+const P: bitstring. (*--The base point--*)
+free KMS:key[private]. (*--The master secret key of server--*)
+free IDj: bitstring[private]. (*-- The identity of Sensor Node--*)
+free KSH: key[private]. (*--The session key of server--*)
+free KSHj: key[private]. (*--The session key of sensor--*)
+
+(* --Constructors-- *)
+fun h( bitstring ): bitstring.(*--Hash operation--*)
+fun CON(bitstring, bitstring): bitstring.(*--Concat operation--*)
+fun XOR(bitstring,bitstring):bitstring.(*--XOR operation--*)
+fun ECC( bitstring , bitstring ): bitstring.(*--ECC operation--*)
+fun bit_timestamp(timestamp): bitstring.(*--Bit operation--*)
+fun bit_key(key): bitstring.(*--Bit operation--*)
+fun bit_nonce(nonce): bitstring.(*--Bit operation--*)
+fun key_bit(bitstring): key.(*--Bit operation--*)
+fun PUF( bitstring ): bitstring.(*--PUF operation--*)
+fun timestampcheck(bitstring, bool): bool.(*--Check timestamp operation--*)
+
+(* --Destructors & Equations-- *)
+reduc forall T: bitstring;
+    timestampcheck(T, true) = true
+otherwise forall T: bitstring;
+    timestampcheck(T, false) = false.--Check timestamp Fresh operation--
+equation forall a:bitstring,b:bitstring; XOR(XOR(a,b),b)=a.(*--XOR operation--*)
+
+(* --Events-- *)
+event BeginSNj (bitstring).
+event EndSNj (bitstring).
+event BeginMS(bitstring).
+event EndMS(bitstring).
+
+(* --Queries-- *)
+query attacker(KMS).
+query attacker(KSHj).
+query attacker(KSHj).
+query attacker(IDj).
+query IDj:bitstring;event(EndSNj(IDj))==>event(BeginMS(IDj)).
+query IDj:bitstring;inj-event(EndMS(IDj))==>inj-event(BeginSNj(IDj)).
+query IDj:bitstring;inj-event(EndSNj(IDj))==>inj-event(BeginMS(IDj)).
+
+(* --The process of Server MS-- *)
+let mserver(IDj:bitstring,P:bitstring,Q:bitstring,KMS:bitstring,Tj:bitstring)=
+    new T2_1:timestamp;
+    let T2=bit_timestamp(T2_1) in
+    in(PC,(XNj:bitstring,YNj:bitstring,Vidj:bitstring,A1:bitstring,T1:bitstring));
+    if timestampcheck(T1,true) then
+        let aj=XOR(XNj,h(CON(KMS,Tj))) in
+        let IDj_1=XOR(XNj,h(CON(KMS,CON(aj,Tj)))) in
+        if IDj_1=IDj then
+            let A2=ECC(KMS,A1) in
+            let Vidj_1=h(CON(IDj,CON(XNj,CON(YNj,CON(A1,CON(A2,h(CON(CON(A2,h(CON(IDj,KMS))),
+            CON(Tj,T1))))))))) in
+            event BeginMS(IDj);
+            new ai_1:nonce;
+            new bi_1:nonce;
+            let ai=bit_nonce(ai_1) in
+            let bi=bit_nonce(bi_1) in
+            let A3=ECC(bi,P) in
+            let A4=ECC(bi,A1) in
+            let XNjn1=XOR(ai,h(CON(KMS,T2))) in
+            let YNjn1=XOR(IDj,h(CON(KMS,CON(ai,T2)))) in
+            let u=XOR(XNjn1,h(CON(A2,h(CON(CON(IDj,KMS),T2))))) in
+            let L=XOR(YNjn1,h(CON(T2,CON(A2,h(CON(IDj,KMS)))))) in
+            let KSHi_1=h(CON(A1,CON(A2,CON(A3,CON(A4,CON(IDj,T2)))))) in
+            let D=h(CON(XNjn1,CON(YNjn1,CON(KSHi_1,T2)))) in
+            let KSHi=key_bit(KSHi_1) in
+            out(PC,(u,L,D,A3,T2));
+            event EndMS(IDj).
+
+(* --The process of sensor node SNj-- *)
+let SNj(IDj:bitstring,P:bitstring,Q:bitstring,XNj:bitstring,YNj:bitstring,Chaj:bitstring,STj: bitstring,Tj:bitstring)=
+    event BeginSNj (IDj);
+    new bj_1:nonce;
+    new T1_1:timestamp;
+    let T1=bit_timestamp(T1_1) in
+    let bj=bit_nonce(bj_1) in
+    let A1=ECC(bj,P) in
+    let MHj=XOR(Hash(PUF(Chaj)),STj) in
+    let A2=ECC(bj,Q) in
+    let Vidj=h(CON(IDj,CON(XNj,CON(YNj,CON(A1,CON(h(CON(A2,MHj)), CON(Tj, CON(Tj,T1)))))))) in
+    out(PC,(XNj,YNj,Vidj,A1, Tj,T1));
+    in(PC,(u:bitstring,L:bitstring,D:bitstring,A3:bitstring,T2:bitstring));
+    if timestampcheck(T3, true) then
+        let A4=ECC(bj,A3) in
+        let XNjn_1=XOR(u,h(CON(A2,CON(MHj,T2)))) in
+        let YNjn_1=XOR(L,h(CON(T2,CON(A2,MHj)))) in
+        let KSHj_1=h(CON(A1,CON(A2,CON(A3,CON(A4,T1))))) in
+        let D_2=h(CON(XNjn_1,CON(YNjn_1,CON(KSHj_1,T2)))) in
+        let KSHj=key_bit(KSHj_1) in
+        if D_2=D then
+            event EndSNj(IDj).
+
+(* --Main process-- *)
+process
+    let KMSn=bit_key(KMS) in
+    let Q=ECC(KMSn,P) in
+    new aj_1:nonce;
+    let aj=bit_nonce(aj_1) in
+    new Tj_1:timestamp;
+    let Tj=bit_timestamp(Tj_1) in
+    let XNj=XOR(aj,h(CON(KMSn,Tj))) in
+    let YNj=XOR(IDj,h(CON(KMSn,CON(aj,Tj)))) in
+    let MHj=h(CON(IDj,KMSn)) in
+    (!SNj(IDj,P,Q,XNj,YNj,MHj,Tj)|!mserver(IDj,P,Q,KMSn,Tj))

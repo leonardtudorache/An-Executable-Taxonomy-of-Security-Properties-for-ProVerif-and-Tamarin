@@ -1,0 +1,167 @@
+theory Generated
+begin
+
+builtins: revealing-signing, asymmetric-encryption
+
+functions: nonce_to_bitstring/1, messtermI/2, messtermR/2
+
+// registration rules
+rule Register_S:
+  [
+    Fr(~sks)
+  ]
+  --[  ]->
+  [
+    !Ltk($S, ~sks),
+    !Pk($S, pk(~sks)),
+    Out(pk(~sks))
+  ]
+
+rule Register_A:
+  [
+    Fr(~ska)
+  ]
+  --[  ]->
+  [
+    !Ltk($A, ~ska),
+    !Pk($A, pk(~ska)),
+    Out(pk(~ska))
+  ]
+
+rule Register_B:
+  [
+    Fr(~skb)
+  ]
+  --[  ]->
+  [
+    !Ltk($B, ~skb),
+    !Pk($B, pk(~skb)),
+    Out(pk(~skb))
+  ]
+
+
+rule Initiator_start:
+  [
+    !Ltk($A, ~ska)
+  ]
+  --[ Begin_Initiator() ]->
+  [
+    Out(<$A, $B>),
+    State_Initiator_1(~ska)
+  ]
+
+rule Initiator_responds_to_step2:
+  let
+    msg_tuple = getMessage(step2_p0)
+    pkx = fst(msg_tuple)
+    check0 = snd(msg_tuple)
+    m3 = aenc(<~na, $A>, pkx)
+  in
+  [
+    !Ltk($A, ~ska),
+    State_Initiator_1(~ska),
+    !Pk($S, pk_s),
+    Fr(~na),
+    In(step2_p0)
+  ]
+  --[ Eq(revealVerify(step2_p0, msg_tuple, pk_s), true), Eq(check0, $B) ]->
+  [
+    Out(m3),
+    State_Initiator_2(~ska, pkx, ~na, m3)
+  ]
+
+rule Initiator_responds_to_step6:
+  let
+    msg_m6_in = adec(m6_in, ~ska)
+    check0 = fst(msg_m6_in)
+    nx2 = fst(snd(msg_m6_in))
+    check1 = snd(snd(msg_m6_in))
+    m7 = aenc(nx2, pkx)
+  in
+  [
+    !Ltk($A, ~ska),
+    State_Initiator_2(~ska, pkx, ~na, m3),
+    In(m6_in)
+  ]
+  --[ Eq(check0, ~na), Eq(check1, $A), Commit_Initiator($A) ]->
+  [
+    Out(m7)
+  ]
+
+rule Responder_responds_to_step3:
+  let
+    msg_m3_in = adec(m3_in, ~skb)
+    ny = fst(msg_m3_in)
+    hosty = snd(msg_m3_in)
+  in
+  [
+    !Ltk($B, ~skb),
+    In(m3_in)
+  ]
+  --[  ]->
+  [
+    Out(<$A, hosty>),
+    State_Responder_1(~skb, m3_in, ny, hosty)
+  ]
+
+rule Responder_responds_to_step5:
+  let
+    msg_tuple = getMessage(step5_p0)
+    pky = fst(msg_tuple)
+    check0 = snd(msg_tuple)
+    m6 = aenc(<ny, ~nb, $A>, pky)
+  in
+  [
+    !Ltk($B, ~skb),
+    State_Responder_1(~skb, m3_in, ny, hosty),
+    !Pk($S, pk_s),
+    Fr(~nb),
+    In(step5_p0)
+  ]
+  --[ Eq(revealVerify(step5_p0, msg_tuple, pk_s), true), Eq(check0, $A) ]->
+  [
+    Out(m6),
+    State_Responder_2(~skb, m3_in, ny, hosty, pky, ~nb, m6)
+  ]
+
+rule Responder_responds_to_step7:
+  let
+    m_adec = adec(m7_in, ~skb)
+  in
+  [
+    !Ltk($B, ~skb),
+    State_Responder_2(~skb, m3_in, ny, hosty, pky, ~nb, m6),
+    In(m7_in)
+  ]
+  --[ Eq(~nb, m_adec), Commit_Responder($B) ]->
+  [
+  ]
+
+rule S_responds_to_step1:
+  [
+    !Ltk($S, ~sks),
+    !Pk(B_in, ~pk_B_in),
+    In(<A_in, B_in>)
+  ]
+  --[  ]->
+  [
+    Out(revealSign(<~pk_B_in, B_in>, ~sks)),
+    State_S_1(~sks, A_in, B_in)
+  ]
+
+rule S_responds_to_step4:
+  [
+    !Ltk($S, ~sks),
+    State_S_1(~sks, A_in, B_in),
+    In(<A_in, hostY_in>),
+    !Pk(hostY_in, ~pk_hostY_in)
+  ]
+  --[ Commit_S($S) ]->
+  [
+    Out(revealSign(<~pk_hostY_in, hostY_in>, ~sks))
+  ]
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @i ==> x = y"
+
+end

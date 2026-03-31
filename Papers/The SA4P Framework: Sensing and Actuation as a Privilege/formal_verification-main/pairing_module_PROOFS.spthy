@@ -1,0 +1,1261 @@
+theory pairing_module begin
+
+// Function signature and definition of the equational theory E
+
+builtins: diffie-hellman, multiset
+functions: fst/1, hkdf/1, kdf1/1, kdf2/1, mac/2, pair/2, sdec/2,
+           senc/2, snd/1
+equations:
+    fst(<x.1, x.2>) = x.1,
+    hkdf(x) = <kdf1(x), kdf2(x)>,
+    sdec(senc(x.1, x.2), x.2) = x.1,
+    snd(<x.1, x.2>) = x.2
+
+
+
+rule (modulo E) Register_srv:
+   [ ] --> [ !Server( $ID ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Register_gw:
+   [ Fr( ~asym ), Fr( ~sym ) ]
+  --[
+  A_gw_registered( $gw_id, ~asym ), A_gw_rx_nonce( $gw_id, $zero )
+  ]->
+   [
+   !Gateway( $gw_id, ~asym, ~sym ), !Pk( $gw_id, 'g'^~asym ),
+   !Gw_received_srv_nonce( $gw_id, $zero )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+restriction gw_registered_only_once:
+  "∀ gw1 asym1 asym2 #i1 #i2.
+    ((A_gw_registered( gw1, asym1 ) @ #i1) ∧
+     (A_gw_registered( gw1, asym2 ) @ #i2)) ⇒
+    (#i1 = #i2)"
+  // safety formula
+
+rule (modulo E) Reveal_gw:
+   [ !Gateway( gw_id, asym, sym ) ]
+  --[ A_reveal( gw_id ) ]->
+   [ Out( <gw_id, asym, sym> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Get_pk:
+   [ !Pk( A, pubkey ) ] --> [ Out( pubkey ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Scan_device:
+   [ !Gateway( gw_id, ~asym_S, ~sym ), !Server( srv_id ) ]
+  --[ A_Device_scanned( gw_id, srv_id ) ]->
+   [ !Srv_device_scan( srv_id, gw_id, 'g'^~asym_S, ~sym ) ]
+
+  /* has exactly the trivial AC variant */
+
+restriction device_scanned_once_per_gw:
+  "∀ gw_id srv_id #i1 #i2.
+    ((A_Device_scanned( gw_id, srv_id ) @ #i1) ∧
+     (A_Device_scanned( gw_id, srv_id ) @ #i2)) ⇒
+    (#i1 = #i2)"
+  // safety formula
+
+rule (modulo E) Scan_device_adversary:
+   [ !Gateway( gw_id, ~asym_S, ~sym ) ]
+  --[ A_device_scanned_adversary( gw_id ) ]->
+   [ Out( <'g'^~asym_S, ~sym> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Pairing_1_us:
+   [ !Gateway( gw_id, ~asym_S, ~sym ), Fr( ~gw_asym_E ) ]
+  --[ A_button_pushed( gw_id, ~gw_asym_E ) ]->
+   [
+   Gw_pairing_initiated( gw_id, ~gw_asym_E ),
+   Out( <'pairing_us', 'g'^~gw_asym_E, mac('g'^~gw_asym_E, ~sym)> )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Abort_pairing_gw:
+   [ Gw_pairing_initiated( gw_id, ~gw_asym_E ) ]
+  --[
+  A_gw_pairing_clear( gw_id, ~gw_asym_E ),
+  A_gw_pairing_abort( gw_id, ~gw_asym_E )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Pairing_button_timeout:
+   [ Gw_pairing_initiated( gw_id, ~gw_asym_E ) ]
+  --[
+  A_gw_pairing_clear( gw_id, ~gw_asym_E ),
+  A_gw_pairing_abort( gw_id, ~gw_asym_E ),
+  A_gw_button_timeout( gw_id, ~gw_asym_E )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+restriction gw_no_concurent_pairing:
+  "∀ gw_id tid1 tid2 #i1 #i2.
+    (((A_button_pushed( gw_id, tid1 ) @ #i1) ∧
+      (A_button_pushed( gw_id, tid2 ) @ #i2)) ∧
+     (#i1 < #i2)) ⇒
+    (∃ #j. (A_gw_pairing_clear( gw_id, tid1 ) @ #j) ∧ (#j < #i2))"
+
+rule (modulo E) Drop_key_gw:
+   [ !Gw_key_established( gw_id, session_keys ) ]
+  --[
+  Keys_not_dropped( gw_id, session_keys ),
+  A_gw_dropped_keys( gw_id, session_keys )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+restriction gw_only_one_active_key:
+  "∀ gw_id tid1 tid2 session_keys1 session_keys2 #i1 #i2.
+    (((A_gw_established_key( gw_id, tid1, session_keys1 ) @ #i1) ∧
+      (A_gw_established_key( gw_id, tid2, session_keys2 ) @ #i2)) ∧
+     (#i1 < #i2)) ⇒
+    (∃ #j.
+      (A_gw_dropped_keys( gw_id, session_keys1 ) @ #j) ∧ (#j < #i2))"
+
+rule (modulo E) Pairing_2_su:
+   [
+   !Server( srv_id ),
+   In( <'pairing_us', gw_pub_E, mac(gw_pub_E, ~gw_sym)> ),
+   !Srv_device_scan( srv_id, gw_id, gw_pub_S, ~gw_sym ),
+   Fr( ~srv_asym_E )
+   ]
+  --[
+  A_srv_established_key( srv_id, gw_id,
+                         hkdf(<gw_pub_S^~srv_asym_E, gw_pub_E^~srv_asym_E, ~gw_sym>)
+  )
+  ]->
+   [
+   Srv_key_established( srv_id, gw_id,
+                        hkdf(<gw_pub_S^~srv_asym_E, gw_pub_E^~srv_asym_E, ~gw_sym>)
+   ),
+   Out( <'pairing_su', 'g'^~srv_asym_E, 
+         mac(<gw_pub_E, 'g'^~srv_asym_E>, ~gw_sym)>
+   )
+   ]
+
+  /*
+  rule (modulo AC) Pairing_2_su:
+     [
+     !Server( srv_id ),
+     In( <'pairing_us', gw_pub_E, mac(gw_pub_E, ~gw_sym)> ),
+     !Srv_device_scan( srv_id, gw_id, gw_pub_S, ~gw_sym ),
+     Fr( ~srv_asym_E )
+     ]
+    --[
+    A_srv_established_key( srv_id, gw_id,
+                           <kdf1(<x, x.1, ~gw_sym>), kdf2(<x, x.1, ~gw_sym>)>
+    )
+    ]->
+     [
+     Srv_key_established( srv_id, gw_id,
+                          <kdf1(<x, x.1, ~gw_sym>), kdf2(<x, x.1, ~gw_sym>)>
+     ),
+     Out( <'pairing_su', 'g'^~srv_asym_E, 
+           mac(<gw_pub_E, 'g'^~srv_asym_E>, ~gw_sym)>
+     )
+     ]
+    variants (modulo AC)
+     1. ~srv_asym_E
+              = ~srv_asym_E.29
+        gw_pub_E
+              = gw_pub_E.31
+        gw_pub_S
+              = gw_pub_S.32
+        x     = gw_pub_S.32^~srv_asym_E.29
+        x.1   = gw_pub_E.31^~srv_asym_E.29
+    
+     2. ~srv_asym_E
+              = ~srv_asym_E.42
+        gw_pub_E
+              = gw_pub_E.44
+        gw_pub_S
+              = x.58^inv(~srv_asym_E.42)
+        x     = x.58
+        x.1   = gw_pub_E.44^~srv_asym_E.42
+    
+     3. ~srv_asym_E
+              = ~srv_asym_E.44
+        gw_pub_E
+              = x.62^inv(~srv_asym_E.44)
+        gw_pub_S
+              = gw_pub_S.47
+        x     = gw_pub_S.47^~srv_asym_E.44
+        x.1   = x.62
+    
+     4. ~srv_asym_E
+              = ~srv_asym_E.44
+        gw_pub_E
+              = x.62^inv(~srv_asym_E.44)
+        gw_pub_S
+              = x.60^inv(~srv_asym_E.44)
+        x     = x.60
+        x.1   = x.62
+    
+     5. ~srv_asym_E
+              = ~srv_asym_E.236
+        gw_pub_E
+              = gw_pub_E.238
+        gw_pub_S
+              = x.467^x.468
+        x     = x.467^(~srv_asym_E.236*x.468)
+        x.1   = gw_pub_E.238^~srv_asym_E.236
+    
+     6. ~srv_asym_E
+              = ~srv_asym_E.236
+        gw_pub_E
+              = x.467^x.468
+        gw_pub_S
+              = gw_pub_S.239
+        x     = gw_pub_S.239^~srv_asym_E.236
+        x.1   = x.467^(~srv_asym_E.236*x.468)
+    
+     7. ~srv_asym_E
+              = ~srv_asym_E.238
+        gw_pub_E
+              = x.469^x.470
+        gw_pub_S
+              = x.471^x.472
+        x     = x.471^(~srv_asym_E.238*x.472)
+        x.1   = x.469^(~srv_asym_E.238*x.470)
+    
+     8. ~srv_asym_E
+              = ~srv_asym_E.238
+        gw_pub_E
+              = x.471^x.472
+        gw_pub_S
+              = x.254^inv(~srv_asym_E.238)
+        x     = x.254
+        x.1   = x.471^(~srv_asym_E.238*x.472)
+    
+     9. ~srv_asym_E
+              = ~srv_asym_E.238
+        gw_pub_E
+              = x.471^inv((~srv_asym_E.238*x.472))
+        gw_pub_S
+              = gw_pub_S.241
+        x     = gw_pub_S.241^~srv_asym_E.238
+        x.1   = x.471^inv(x.472)
+    
+    10. ~srv_asym_E
+              = ~srv_asym_E.238
+        gw_pub_E
+              = x.471^inv((~srv_asym_E.238*x.472))
+        gw_pub_S
+              = x.254^inv(~srv_asym_E.238)
+        x     = x.254
+        x.1   = x.471^inv(x.472)
+    
+    11. ~srv_asym_E
+              = ~srv_asym_E.238
+        gw_pub_E
+              = x.471^(x.472*inv(~srv_asym_E.238))
+        gw_pub_S
+              = gw_pub_S.241
+        x     = gw_pub_S.241^~srv_asym_E.238
+        x.1   = x.471^x.472
+    
+    12. ~srv_asym_E
+              = ~srv_asym_E.238
+        gw_pub_E
+              = x.471^(x.472*inv(~srv_asym_E.238))
+        gw_pub_S
+              = x.254^inv(~srv_asym_E.238)
+        x     = x.254
+        x.1   = x.471^x.472
+    
+    13. ~srv_asym_E
+              = ~srv_asym_E.239
+        gw_pub_E
+              = gw_pub_E.241
+        gw_pub_S
+              = x.473^inv((~srv_asym_E.239*x.474))
+        x     = x.473^inv(x.474)
+        x.1   = gw_pub_E.241^~srv_asym_E.239
+    
+    14. ~srv_asym_E
+              = ~srv_asym_E.239
+        gw_pub_E
+              = gw_pub_E.241
+        gw_pub_S
+              = x.473^(x.474*inv(~srv_asym_E.239))
+        x     = x.473^x.474
+        x.1   = gw_pub_E.241^~srv_asym_E.239
+    
+    15. ~srv_asym_E
+              = ~srv_asym_E.239
+        gw_pub_E
+              = x.257^inv(~srv_asym_E.239)
+        gw_pub_S
+              = x.473^x.474
+        x     = x.473^(~srv_asym_E.239*x.474)
+        x.1   = x.257
+    
+    16. ~srv_asym_E
+              = ~srv_asym_E.239
+        gw_pub_E
+              = x.257^inv(~srv_asym_E.239)
+        gw_pub_S
+              = x.473^inv((~srv_asym_E.239*x.474))
+        x     = x.473^inv(x.474)
+        x.1   = x.257
+    
+    17. ~srv_asym_E
+              = ~srv_asym_E.239
+        gw_pub_E
+              = x.257^inv(~srv_asym_E.239)
+        gw_pub_S
+              = x.473^(x.474*inv(~srv_asym_E.239))
+        x     = x.473^x.474
+        x.1   = x.257
+    
+    18. ~srv_asym_E
+              = ~srv_asym_E.239
+        gw_pub_E
+              = x.472^(x.473*inv((~srv_asym_E.239*x.474)))
+        gw_pub_S
+              = gw_pub_S.242
+        x     = gw_pub_S.242^~srv_asym_E.239
+        x.1   = x.472^(x.473*inv(x.474))
+    
+    19. ~srv_asym_E
+              = ~srv_asym_E.239
+        gw_pub_E
+              = x.472^(x.473*inv((~srv_asym_E.239*x.474)))
+        gw_pub_S
+              = x.255^inv(~srv_asym_E.239)
+        x     = x.255
+        x.1   = x.472^(x.473*inv(x.474))
+    
+    20. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = gw_pub_E.242
+        gw_pub_S
+              = x.474^(x.475*inv((~srv_asym_E.240*x.476)))
+        x     = x.474^(x.475*inv(x.476))
+        x.1   = gw_pub_E.242^~srv_asym_E.240
+    
+    21. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.258^inv(~srv_asym_E.240)
+        gw_pub_S
+              = x.474^(x.475*inv((~srv_asym_E.240*x.476)))
+        x     = x.474^(x.475*inv(x.476))
+        x.1   = x.258
+    
+    22. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.473^x.474
+        gw_pub_S
+              = x.475^inv((~srv_asym_E.240*x.476))
+        x     = x.475^inv(x.476)
+        x.1   = x.473^(~srv_asym_E.240*x.474)
+    
+    23. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.473^x.474
+        gw_pub_S
+              = x.475^(x.476*inv(~srv_asym_E.240))
+        x     = x.475^x.476
+        x.1   = x.473^(~srv_asym_E.240*x.474)
+    
+    24. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.473^inv((~srv_asym_E.240*x.474))
+        gw_pub_S
+              = x.475^x.476
+        x     = x.475^(~srv_asym_E.240*x.476)
+        x.1   = x.473^inv(x.474)
+    
+    25. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.473^inv((~srv_asym_E.240*x.474))
+        gw_pub_S
+              = x.475^inv((~srv_asym_E.240*x.476))
+        x     = x.475^inv(x.476)
+        x.1   = x.473^inv(x.474)
+    
+    26. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.473^inv((~srv_asym_E.240*x.474))
+        gw_pub_S
+              = x.475^(x.476*inv(~srv_asym_E.240))
+        x     = x.475^x.476
+        x.1   = x.473^inv(x.474)
+    
+    27. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.473^(x.474*inv(~srv_asym_E.240))
+        gw_pub_S
+              = x.475^x.476
+        x     = x.475^(~srv_asym_E.240*x.476)
+        x.1   = x.473^x.474
+    
+    28. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.473^(x.474*inv(~srv_asym_E.240))
+        gw_pub_S
+              = x.475^inv((~srv_asym_E.240*x.476))
+        x     = x.475^inv(x.476)
+        x.1   = x.473^x.474
+    
+    29. ~srv_asym_E
+              = ~srv_asym_E.240
+        gw_pub_E
+              = x.473^(x.474*inv(~srv_asym_E.240))
+        gw_pub_S
+              = x.475^(x.476*inv(~srv_asym_E.240))
+        x     = x.475^x.476
+        x.1   = x.473^x.474
+    
+    30. ~srv_asym_E
+              = ~srv_asym_E.241
+        gw_pub_E
+              = x.474^x.475
+        gw_pub_S
+              = x.476^(x.477*inv((~srv_asym_E.241*x.478)))
+        x     = x.476^(x.477*inv(x.478))
+        x.1   = x.474^(~srv_asym_E.241*x.475)
+    
+    31. ~srv_asym_E
+              = ~srv_asym_E.241
+        gw_pub_E
+              = x.474^inv((~srv_asym_E.241*x.475))
+        gw_pub_S
+              = x.476^(x.477*inv((~srv_asym_E.241*x.478)))
+        x     = x.476^(x.477*inv(x.478))
+        x.1   = x.474^inv(x.475)
+    
+    32. ~srv_asym_E
+              = ~srv_asym_E.241
+        gw_pub_E
+              = x.474^(x.475*inv(~srv_asym_E.241))
+        gw_pub_S
+              = x.476^(x.477*inv((~srv_asym_E.241*x.478)))
+        x     = x.476^(x.477*inv(x.478))
+        x.1   = x.474^x.475
+    
+    33. ~srv_asym_E
+              = ~srv_asym_E.241
+        gw_pub_E
+              = x.474^(x.475*inv((~srv_asym_E.241*x.476)))
+        gw_pub_S
+              = x.477^x.478
+        x     = x.477^(~srv_asym_E.241*x.478)
+        x.1   = x.474^(x.475*inv(x.476))
+    
+    34. ~srv_asym_E
+              = ~srv_asym_E.241
+        gw_pub_E
+              = x.474^(x.475*inv((~srv_asym_E.241*x.476)))
+        gw_pub_S
+              = x.477^inv((~srv_asym_E.241*x.478))
+        x     = x.477^inv(x.478)
+        x.1   = x.474^(x.475*inv(x.476))
+    
+    35. ~srv_asym_E
+              = ~srv_asym_E.241
+        gw_pub_E
+              = x.474^(x.475*inv((~srv_asym_E.241*x.476)))
+        gw_pub_S
+              = x.477^(x.478*inv(~srv_asym_E.241))
+        x     = x.477^x.478
+        x.1   = x.474^(x.475*inv(x.476))
+    
+    36. ~srv_asym_E
+              = ~srv_asym_E.242
+        gw_pub_E
+              = x.475^(x.476*inv((~srv_asym_E.242*x.477)))
+        gw_pub_S
+              = x.478^(x.479*inv((~srv_asym_E.242*x.480)))
+        x     = x.478^(x.479*inv(x.480))
+        x.1   = x.475^(x.476*inv(x.477))
+  */
+
+rule (modulo E) Pairing_3_gw_receive:
+   [
+   !Gateway( gw_id, ~gw_asym_S, ~sym ),
+   Gw_pairing_initiated( gw_id, ~gw_asym_E ),
+   In( <'pairing_su', srv_pub_E, 
+        mac(<'g'^~gw_asym_E, srv_pub_E>, ~sym)>
+   )
+   ]
+  --[
+  A_gw_established_key( gw_id, ~gw_asym_E,
+                        hkdf(<srv_pub_E^~gw_asym_S, srv_pub_E^~gw_asym_E, ~sym>)
+  ),
+  A_gw_pairing_clear( gw_id, ~gw_asym_E )
+  ]->
+   [
+   !Gw_key_established( gw_id,
+                        hkdf(<srv_pub_E^~gw_asym_S, srv_pub_E^~gw_asym_E, ~sym>)
+   ),
+   Out( <'auth_us', '0', '0', 'key_confirmation', 
+         mac(<'auth_us', '0', '0', 'key_confirmation'>,
+             fst(hkdf(<srv_pub_E^~gw_asym_S, srv_pub_E^~gw_asym_E, ~sym>)))
+        >
+   )
+   ]
+
+  /*
+  rule (modulo AC) Pairing_3_gw_receive:
+     [
+     !Gateway( gw_id, ~gw_asym_S, ~sym ),
+     Gw_pairing_initiated( gw_id, ~gw_asym_E ),
+     In( <'pairing_su', srv_pub_E, 
+          mac(<'g'^~gw_asym_E, srv_pub_E>, ~sym)>
+     )
+     ]
+    --[
+    A_gw_established_key( gw_id, ~gw_asym_E,
+                          <kdf1(<x, x.1, ~sym>), kdf2(<x, x.1, ~sym>)>
+    ),
+    A_gw_pairing_clear( gw_id, ~gw_asym_E )
+    ]->
+     [
+     !Gw_key_established( gw_id,
+                          <kdf1(<x, x.1, ~sym>), kdf2(<x, x.1, ~sym>)>
+     ),
+     Out( <'auth_us', '0', '0', 'key_confirmation', 
+           mac(<'auth_us', '0', '0', 'key_confirmation'>,
+               kdf1(<x, x.1, ~sym>))
+          >
+     )
+     ]
+    variants (modulo AC)
+     1. ~gw_asym_E
+              = ~gw_asym_E.30
+        ~gw_asym_S
+              = ~gw_asym_S.31
+        srv_pub_E
+              = srv_pub_E.34
+        x     = srv_pub_E.34^~gw_asym_S.31
+        x.1   = srv_pub_E.34^~gw_asym_E.30
+    
+     2. ~gw_asym_E
+              = ~gw_asym_E.45
+        ~gw_asym_S
+              = ~gw_asym_E.45
+        srv_pub_E
+              = x.64^inv(~gw_asym_E.45)
+        x     = x.64
+        x.1   = x.64
+    
+     3. ~gw_asym_E
+              = ~gw_asym_E.45
+        ~gw_asym_S
+              = ~gw_asym_S.46
+        srv_pub_E
+              = x.64^inv(~gw_asym_S.46)
+        x     = x.64
+        x.1   = x.64^(~gw_asym_E.45*inv(~gw_asym_S.46))
+    
+     4. ~gw_asym_E
+              = ~gw_asym_E.47
+        ~gw_asym_S
+              = ~gw_asym_S.48
+        srv_pub_E
+              = x.68^inv(~gw_asym_E.47)
+        x     = x.68^(~gw_asym_S.48*inv(~gw_asym_E.47))
+        x.1   = x.68
+    
+     5. ~gw_asym_E
+              = ~gw_asym_E.318
+        ~gw_asym_S
+              = ~gw_asym_S.319
+        srv_pub_E
+              = x.633^x.634
+        x     = x.633^(~gw_asym_S.319*x.634)
+        x.1   = x.633^(~gw_asym_E.318*x.634)
+    
+     6. ~gw_asym_E
+              = ~gw_asym_E.321
+        ~gw_asym_S
+              = ~gw_asym_E.321
+        srv_pub_E
+              = x.639^inv((~gw_asym_E.321*x.640))
+        x     = x.639^inv(x.640)
+        x.1   = x.639^inv(x.640)
+    
+     7. ~gw_asym_E
+              = ~gw_asym_E.321
+        ~gw_asym_S
+              = ~gw_asym_E.321
+        srv_pub_E
+              = x.639^(x.640*inv(~gw_asym_E.321))
+        x     = x.639^x.640
+        x.1   = x.639^x.640
+    
+     8. ~gw_asym_E
+              = ~gw_asym_E.321
+        ~gw_asym_S
+              = ~gw_asym_S.322
+        srv_pub_E
+              = x.639^inv((~gw_asym_S.322*x.640))
+        x     = x.639^inv(x.640)
+        x.1   = x.639^(~gw_asym_E.321*inv((~gw_asym_S.322*x.640)))
+    
+     9. ~gw_asym_E
+              = ~gw_asym_E.321
+        ~gw_asym_S
+              = ~gw_asym_S.322
+        srv_pub_E
+              = x.639^(x.640*inv(~gw_asym_S.322))
+        x     = x.639^x.640
+        x.1   = x.639^(~gw_asym_E.321*x.640*inv(~gw_asym_S.322))
+    
+    10. ~gw_asym_E
+              = ~gw_asym_E.321
+        ~gw_asym_S
+              = ~gw_asym_S.322
+        srv_pub_E
+              = x.640^inv((~gw_asym_E.321*~gw_asym_S.322))
+        x     = x.640^inv(~gw_asym_E.321)
+        x.1   = x.640^inv(~gw_asym_S.322)
+    
+    11. ~gw_asym_E
+              = ~gw_asym_E.322
+        ~gw_asym_S
+              = ~gw_asym_E.322
+        srv_pub_E
+              = x.640^(x.641*inv((~gw_asym_E.322*x.642)))
+        x     = x.640^(x.641*inv(x.642))
+        x.1   = x.640^(x.641*inv(x.642))
+    
+    12. ~gw_asym_E
+              = ~gw_asym_E.322
+        ~gw_asym_S
+              = ~gw_asym_S.323
+        srv_pub_E
+              = x.640^(x.641*inv((~gw_asym_S.323*x.642)))
+        x     = x.640^(x.641*inv(x.642))
+        x.1   = x.640^(~gw_asym_E.322*x.641*inv((~gw_asym_S.323*x.642)))
+    
+    13. ~gw_asym_E
+              = ~gw_asym_E.322
+        ~gw_asym_S
+              = ~gw_asym_S.323
+        srv_pub_E
+              = x.641^inv((~gw_asym_E.322*~gw_asym_S.323*x.642))
+        x     = x.641^inv((~gw_asym_E.322*x.642))
+        x.1   = x.641^inv((~gw_asym_S.323*x.642))
+    
+    14. ~gw_asym_E
+              = ~gw_asym_E.322
+        ~gw_asym_S
+              = ~gw_asym_S.323
+        srv_pub_E
+              = x.641^inv((~gw_asym_E.322*x.642))
+        x     = x.641^(~gw_asym_S.323*inv((~gw_asym_E.322*x.642)))
+        x.1   = x.641^inv(x.642)
+    
+    15. ~gw_asym_E
+              = ~gw_asym_E.322
+        ~gw_asym_S
+              = ~gw_asym_S.323
+        srv_pub_E
+              = x.641^(x.642*inv(~gw_asym_E.322))
+        x     = x.641^(~gw_asym_S.323*x.642*inv(~gw_asym_E.322))
+        x.1   = x.641^x.642
+    
+    16. ~gw_asym_E
+              = ~gw_asym_E.322
+        ~gw_asym_S
+              = ~gw_asym_S.323
+        srv_pub_E
+              = x.641^(x.642*inv((~gw_asym_E.322*~gw_asym_S.323)))
+        x     = x.641^(x.642*inv(~gw_asym_E.322))
+        x.1   = x.641^(x.642*inv(~gw_asym_S.323))
+    
+    17. ~gw_asym_E
+              = ~gw_asym_E.323
+        ~gw_asym_S
+              = ~gw_asym_S.324
+        srv_pub_E
+              = x.642^(x.643*inv((~gw_asym_E.323*~gw_asym_S.324*x.644)))
+        x     = x.642^(x.643*inv((~gw_asym_E.323*x.644)))
+        x.1   = x.642^(x.643*inv((~gw_asym_S.324*x.644)))
+    
+    18. ~gw_asym_E
+              = ~gw_asym_E.323
+        ~gw_asym_S
+              = ~gw_asym_S.324
+        srv_pub_E
+              = x.642^(x.643*inv((~gw_asym_E.323*x.644)))
+        x     = x.642^(~gw_asym_S.324*x.643*inv((~gw_asym_E.323*x.644)))
+        x.1   = x.642^(x.643*inv(x.644))
+  */
+
+rule (modulo E) Pairing_4_srv_key_confirmation:
+   [
+   Fr( ~server_random ),
+   Srv_key_established( srv_id, gw_id, <key_us, key_su> ),
+   In( <'auth_us', '0', '0', 'key_confirmation', 
+        mac(<'auth_us', '0', '0', 'key_confirmation'>, key_us)>
+   )
+   ]
+  --[
+  Claim_secret( srv_id, <key_us, key_su> ), A_honest( gw_id ),
+  A_srv_confirmed_key( srv_id, gw_id, <key_us, key_su> )
+  ]->
+   [ !Srv_key_confirmed( srv_id, gw_id, <key_us, key_su> ) ]
+
+  /* has exactly the trivial AC variant */
+
+lemma executable_pairing:
+  exists-trace
+  "∃ srv_id gw_id gw_tid keys #i #j.
+    (A_srv_confirmed_key( srv_id, gw_id, keys ) @ #i) ∧
+    (A_gw_established_key( gw_id, gw_tid, keys ) @ #j)"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ srv_id gw_id gw_tid keys #i #j.
+  (A_srv_confirmed_key( srv_id, gw_id, keys ) @ #i) ∧
+  (A_gw_established_key( gw_id, gw_tid, keys ) @ #j)"
+*/
+simplify
+solve( Srv_key_established( srv_id, gw_id,
+                            <kdf1(<x, x.1, ~sym>), kdf2(<x, x.1, ~sym>)>
+       ) ▶₁ #i )
+  case Pairing_2_su
+  solve( !Gateway( $gw_id, ~gw_asym_S, ~sym ) ▶₀ #j )
+    case Register_gw
+    solve( Gw_pairing_initiated( $gw_id, ~gw_asym_E ) ▶₁ #j )
+      case Pairing_1_us
+      solve( !KU( mac(<'auth_us', '0', '0', 'key_confirmation'>,
+                      kdf1(<'g'^(~asym_S*~srv_asym_E), 'g'^(~gw_asym_E*~srv_asym_E), ~sym
+                           >))
+             ) @ #vk.7 )
+        case Pairing_3_gw_receive
+        solve( !KU( mac(<'g'^~gw_asym_E, 'g'^~srv_asym_E>, ~sym)
+               ) @ #vk.12 )
+          case Pairing_2_su
+          solve( !KU( mac('g'^~gw_asym_E, ~sym) ) @ #vk.17 )
+            case Pairing_1_us
+            solve( !KU( 'g'^~srv_asym_E ) @ #vk.13 )
+              case Pairing_2_su
+              solve( !KU( 'g'^~gw_asym_E ) @ #vk.17 )
+                case Pairing_1_us
+                SOLVED // trace found
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma executable_repairing:
+  exists-trace
+  "∃ srv_id_1 srv_id_2 gw_id keys_1 keys_2 #i #k.
+    ((A_srv_confirmed_key( srv_id_1, gw_id, keys_1 ) @ #i) ∧
+     (A_srv_confirmed_key( srv_id_2, gw_id, keys_2 ) @ #k)) ∧
+    (#i < #k)"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ srv_id_1 srv_id_2 gw_id keys_1 keys_2 #i #k.
+  (A_srv_confirmed_key( srv_id_1, gw_id, keys_1 ) @ #i) ∧
+  (A_srv_confirmed_key( srv_id_2, gw_id, keys_2 ) @ #k)
+ ∧
+  #i < #k"
+*/
+simplify
+solve( Srv_key_established( srv_id_1, gw_id, <key_us, key_su>
+       ) ▶₁ #i )
+  case Pairing_2_su
+  solve( Srv_key_established( srv_id_2, $gw_id, <key_us, key_su>
+         ) ▶₁ #k )
+    case Pairing_2_su
+    solve( !KU( mac(<'auth_us', '0', '0', 'key_confirmation'>,
+                    kdf1(<'g'^(~asym_S*~srv_asym_E), x, ~gw_sym>))
+           ) @ #vk.11 )
+      case Pairing_3_gw_receive
+      solve( !KU( mac(<'auth_us', '0', '0', 'key_confirmation'>,
+                      kdf1(<'g'^(~asym_S*~srv_asym_E.1), x, ~gw_sym>))
+             ) @ #vk.12 )
+        case Pairing_3_gw_receive
+        solve( (¬(#vr.14 < #vr.20))  ∥
+               (∃ #j.
+                 (A_gw_pairing_clear( $gw_id, ~gw_asym_E ) @ #j) ∧ #j < #vr.20) )
+          case case_1
+          solve( (¬(#vr.20 < #vr.14))  ∥
+                 (∃ #j.
+                   (A_gw_pairing_clear( $gw_id, ~gw_asym_E.1 ) @ #j) ∧ #j < #vr.14) )
+            case case_2
+            solve( (¬(#vr.9 < #vr.15))  ∥
+                   (∃ #j.
+                     (A_gw_dropped_keys( $gw_id,
+                                         <
+                                          kdf1(<'g'^(~asym_S*~srv_asym_E), 
+                                                'g'^(~gw_asym_E*~srv_asym_E), ~gw_sym>), 
+                                          kdf2(<'g'^(~asym_S*~srv_asym_E), 
+                                                'g'^(~gw_asym_E*~srv_asym_E), ~gw_sym>)
+                                         >
+                      ) @ #j)
+                    ∧
+                     #j < #vr.15) )
+              case case_1
+              solve( (¬(#vr.15 < #vr.9))  ∥
+                     (∃ #j.
+                       (A_gw_dropped_keys( $gw_id,
+                                           <
+                                            kdf1(<'g'^(~asym_S*~srv_asym_E.1), 
+                                                  'g'^(~gw_asym_E.1*~srv_asym_E.1), ~gw_sym>), 
+                                            kdf2(<'g'^(~asym_S*~srv_asym_E.1), 
+                                                  'g'^(~gw_asym_E.1*~srv_asym_E.1), ~gw_sym>)
+                                           >
+                        ) @ #j)
+                      ∧
+                       #j < #vr.9) )
+                case case_2
+                solve( (#vr.14 = #vr.20)  ∥ (#vr.20 < #vr.14) )
+                  case case_2
+                  solve( (#vr.9 = #vr.15)  ∥ (#vr.15 < #vr.9) )
+                    case case_2
+                    solve( !Gw_key_established( $gw_id,
+                                                <
+                                                 kdf1(<'g'^(~asym_S*~srv_asym_E.1), 
+                                                       'g'^(~gw_asym_E.1*~srv_asym_E.1), ~gw_sym>), 
+                                                 kdf2(<'g'^(~asym_S*~srv_asym_E.1), 
+                                                       'g'^(~gw_asym_E.1*~srv_asym_E.1), ~gw_sym>)
+                                                >
+                           ) ▶₀ #j )
+                      case Pairing_3_gw_receive
+                      solve( A_gw_pairing_clear( $gw_id, ~gw_asym_E.1 ) @ #j.1 )
+                        case Pairing_3_gw_receive
+                        solve( (¬(#j.1 < #vr.15))  ∥
+                               (∃ #j.
+                                 (A_gw_dropped_keys( $gw_id,
+                                                     <kdf1(<x, x.1, ~sym>), kdf2(<x, x.1, ~sym>)>
+                                  ) @ #j)
+                                ∧
+                                 #j < #vr.15) )
+                          case case_1
+                          solve( (¬(#vr.15 < #j.1))  ∥
+                                 (∃ #j.2.
+                                   (A_gw_dropped_keys( $gw_id,
+                                                       <
+                                                        kdf1(<'g'^(~asym_S*~srv_asym_E.1), 
+                                                              'g'^(~gw_asym_E.1*~srv_asym_E.1), 
+                                                              ~gw_sym>), 
+                                                        kdf2(<'g'^(~asym_S*~srv_asym_E.1), 
+                                                              'g'^(~gw_asym_E.1*~srv_asym_E.1), 
+                                                              ~gw_sym>)
+                                                       >
+                                    ) @ #j.2)
+                                  ∧
+                                   #j.2 < #j.1) )
+                            case case_1
+                            solve( (#j.1 = #vr.15)  ∥ (#vr.15 < #j.1) )
+                              case case_1
+                              solve( !Gw_key_established( $gw_id,
+                                                          <
+                                                           kdf1(<'g'^(~asym_S*~srv_asym_E.1), 
+                                                                 'g'^(~gw_asym_E.1*~srv_asym_E.1), 
+                                                                 ~gw_sym>), 
+                                                           kdf2(<'g'^(~asym_S*~srv_asym_E.1), 
+                                                                 'g'^(~gw_asym_E.1*~srv_asym_E.1), 
+                                                                 ~gw_sym>)
+                                                          >
+                                     ) ▶₀ #j.2 )
+                                case Pairing_3_gw_receive
+                                solve( !KU( mac('g'^~gw_asym_E, ~gw_sym) ) @ #vk.18 )
+                                  case Pairing_1_us
+                                  solve( !KU( mac('g'^~gw_asym_E.1, ~gw_sym) ) @ #vk.21 )
+                                    case Pairing_1_us
+                                    solve( !KU( 'g'^~srv_asym_E ) @ #vk.26 )
+                                      case Pairing_2_su
+                                      solve( !KU( mac(<'g'^~gw_asym_E, 'g'^~srv_asym_E>, ~gw_sym)
+                                             ) @ #vk.27 )
+                                        case Pairing_2_su
+                                        solve( !KU( 'g'^~gw_asym_E ) @ #vk.24 )
+                                          case Pairing_1_us
+                                          solve( !KU( 'g'^~srv_asym_E.1 ) @ #vk.29 )
+                                            case Pairing_2_su
+                                            solve( !KU( mac(<'g'^~gw_asym_E.1, 'g'^~srv_asym_E.1>,
+                                                            ~gw_sym)
+                                                   ) @ #vk.30 )
+                                              case Pairing_2_su
+                                              solve( !KU( 'g'^~gw_asym_E.1 ) @ #vk.29 )
+                                                case Pairing_1_us
+                                                SOLVED // trace found
+                                              qed
+                                            qed
+                                          qed
+                                        qed
+                                      qed
+                                    qed
+                                  qed
+                                qed
+                              qed
+                            qed
+                          qed
+                        qed
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma abort_pairing:
+  exists-trace
+  "∃ srv_id gw_id tid_1 tid_2 keys #i #j #k #l #m.
+    (((((A_button_pushed( gw_id, tid_1 ) @ #i) ∧
+        (A_button_pushed( gw_id, tid_2 ) @ #j)) ∧
+       (#i < #j)) ∧
+      (A_gw_pairing_abort( gw_id, tid_1 ) @ #k)) ∧
+     (A_gw_established_key( gw_id, tid_2, keys ) @ #l)) ∧
+    (A_srv_confirmed_key( srv_id, gw_id, keys ) @ #m)"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ srv_id gw_id tid_1 tid_2 keys #i #j #k #l #m.
+  (A_button_pushed( gw_id, tid_1 ) @ #i) ∧
+  (A_button_pushed( gw_id, tid_2 ) @ #j) ∧
+  (A_gw_pairing_abort( gw_id, tid_1 ) @ #k) ∧
+  (A_gw_established_key( gw_id, tid_2, keys ) @ #l) ∧
+  (A_srv_confirmed_key( srv_id, gw_id, keys ) @ #m)
+ ∧
+  #i < #j"
+*/
+simplify
+solve( !Gateway( gw_id, ~asym_S, ~sym ) ▶₀ #i )
+  case Register_gw
+  solve( !Gateway( $gw_id, ~asym_S.1, ~sym.1 ) ▶₀ #j )
+    case Register_gw
+    solve( !Gateway( $gw_id, ~gw_asym_S, ~sym.1 ) ▶₀ #l )
+      case Register_gw
+      solve( Gw_pairing_initiated( $gw_id, ~gw_asym_E.1 ) ▶₁ #l )
+        case Pairing_1_us
+        solve( Srv_key_established( srv_id, $gw_id,
+                                    <kdf1(<x, x.1, ~sym>), kdf2(<x, x.1, ~sym>)>
+               ) ▶₁ #m )
+          case Pairing_2_su
+          solve( A_gw_pairing_abort( $gw_id, ~gw_asym_E ) @ #k )
+            case Abort_pairing_gw
+            solve( Gw_pairing_initiated( $gw_id, ~gw_asym_E ) ▶₀ #k )
+              case Pairing_1_us
+              solve( A_gw_pairing_clear( $gw_id, ~gw_asym_E ) @ #j.1 )
+                case Abort_pairing_gw
+                solve( Gw_pairing_initiated( $gw_id, ~gw_asym_E ) ▶₀ #j.1 )
+                  case Pairing_1_us
+                  solve( !KU( mac(<'g'^~gw_asym_E.1, 'g'^~srv_asym_E>, ~sym)
+                         ) @ #vk.4 )
+                    case Pairing_2_su
+                    solve( !KU( mac(<'auth_us', '0', '0', 'key_confirmation'>,
+                                    kdf1(<'g'^(~asym_S*~srv_asym_E), 
+                                          'g'^(~srv_asym_E*~gw_asym_E.1), ~sym>))
+                           ) @ #vk.12 )
+                      case Pairing_3_gw_receive
+                      solve( !KU( mac('g'^~gw_asym_E.1, ~sym) ) @ #vk.17 )
+                        case Pairing_1_us
+                        solve( !KU( 'g'^~srv_asym_E ) @ #vk.8 )
+                          case Pairing_2_su
+                          solve( !KU( 'g'^~gw_asym_E.1 ) @ #vk.17 )
+                            case Pairing_1_us
+                            SOLVED // trace found
+                          qed
+                        qed
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma gw_authentication:
+  all-traces
+  "∀ srv_id gw_id session_keys #i.
+    (A_srv_confirmed_key( srv_id, gw_id, session_keys ) @ #i) ⇒
+    ((∃ gw_tid #j.
+       (A_gw_established_key( gw_id, gw_tid, session_keys ) @ #j) ∧
+       (#j < #i)) ∨
+     (∃ #r. (A_reveal( gw_id ) @ #r) ∧ (#r < #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ srv_id gw_id session_keys #i.
+  (A_srv_confirmed_key( srv_id, gw_id, session_keys ) @ #i)
+ ∧
+  (∀ gw_tid #j.
+    (A_gw_established_key( gw_id, gw_tid, session_keys ) @ #j)
+   ⇒
+    ¬(#j < #i)) ∧
+  (∀ #r. (A_reveal( gw_id ) @ #r) ⇒ ¬(#r < #i))"
+*/
+simplify
+solve( Srv_key_established( srv_id, gw_id, <key_us, key_su>
+       ) ▶₁ #i )
+  case Pairing_2_su
+  solve( !KU( mac(<'auth_us', '0', '0', 'key_confirmation'>,
+                  kdf1(<'g'^(~asym_S*~srv_asym_E), x, ~gw_sym>))
+         ) @ #vk.7 )
+    case Pairing_3_gw_receive
+    by contradiction /* from formulas */
+  next
+    case c_mac
+    solve( !KU( kdf1(<'g'^(~asym_S*~srv_asym_E), x, ~gw_sym>)
+           ) @ #vk.16 )
+      case c_kdf1
+      solve( !KU( ~gw_sym ) @ #vk.21 )
+        case Reveal_gw
+        by contradiction /* from formulas */
+      next
+        case Scan_device_adversary
+        solve( !KU( 'g'^(~asym_S*~srv_asym_E) ) @ #vk.19 )
+          case Get_pk
+          by solve( !KU( ~srv_asym_E ) @ #vk.22 )
+        next
+          case Pairing_2_su
+          solve( !KU( ~asym_S ) @ #vk.22 )
+            case Reveal_gw
+            by contradiction /* from formulas */
+          qed
+        next
+          case Scan_device_adversary
+          by solve( !KU( ~srv_asym_E ) @ #vk.22 )
+        next
+          case c_exp
+          solve( !KU( ~asym_S ) @ #vk.24 )
+            case Reveal_gw
+            by contradiction /* from formulas */
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma weak_manager_authentication:
+  all-traces
+  "∀ gw_id gw_tid session_keys #i.
+    (A_gw_established_key( gw_id, gw_tid, session_keys ) @ #i) ⇒
+    (((∃ srv_id #j #k.
+        (((A_srv_established_key( srv_id, gw_id, session_keys ) @ #j) ∧
+          (A_Device_scanned( gw_id, srv_id ) @ #k)) ∧
+         (#k < #j)) ∧
+        (¬(∃ #l. K( session_keys ) @ #l))) ∨
+      (∃ #r. (A_reveal( gw_id ) @ #r) ∧ (#r < #i))) ∨
+     (∃ #s. (A_device_scanned_adversary( gw_id ) @ #s) ∧ (#s < #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ gw_id gw_tid session_keys #i.
+  (A_gw_established_key( gw_id, gw_tid, session_keys ) @ #i)
+ ∧
+  (∀ srv_id #j #k.
+    (A_srv_established_key( srv_id, gw_id, session_keys ) @ #j) ∧
+    (A_Device_scanned( gw_id, srv_id ) @ #k)
+   ⇒
+    ((¬(#k < #j)) ∨ (∃ #l. (K( session_keys ) @ #l)))) ∧
+  (∀ #r. (A_reveal( gw_id ) @ #r) ⇒ ¬(#r < #i)) ∧
+  (∀ #s. (A_device_scanned_adversary( gw_id ) @ #s) ⇒ ¬(#s < #i))"
+*/
+simplify
+solve( !Gateway( gw_id, ~gw_asym_S, ~sym ) ▶₀ #i )
+  case Register_gw
+  solve( Gw_pairing_initiated( $gw_id, ~gw_asym_E ) ▶₁ #i )
+    case Pairing_1_us
+    solve( !KU( mac(<'g'^~gw_asym_E, srv_pub_E>, ~sym) ) @ #vk.4 )
+      case Pairing_2_su
+      solve( !KU( kdf1(<'g'^(~asym_S*~srv_asym_E), 
+                        'g'^(~gw_asym_E*~srv_asym_E), ~sym>)
+             ) @ #vk.11 )
+        case c_kdf1
+        solve( !KU( ~sym ) @ #vk.17 )
+          case Reveal_gw
+          solve( !KU( kdf2(<'g'^(~asym_S*~srv_asym_E), 
+                            'g'^(~gw_asym_E*~srv_asym_E), ~sym>)
+                 ) @ #vk.13 )
+            case c_kdf2
+            solve( !KU( 'g'^(~asym_S*~srv_asym_E) ) @ #vk.16 )
+              case Get_pk
+              by solve( !KU( ~srv_asym_E ) @ #vk.18 )
+            next
+              case Pairing_2_su
+              solve( !KU( 'g'^(~gw_asym_E*~srv_asym_E) ) @ #vk.17 )
+                case Pairing_1_us
+                by solve( !KU( ~srv_asym_E ) @ #vk.19 )
+              next
+                case Pairing_2_su
+                by solve( !KU( ~gw_asym_E ) @ #vk.19 )
+              next
+                case c_exp
+                by solve( !KU( ~gw_asym_E ) @ #vk.21 )
+              qed
+            next
+              case Scan_device_adversary
+              by solve( !KU( ~srv_asym_E ) @ #vk.18 )
+            next
+              case c_exp
+              by solve( !KU( ~srv_asym_E ) @ #vk.21 )
+            qed
+          qed
+        next
+          case Scan_device_adversary
+          solve( !KU( kdf2(<'g'^(~asym_S*~srv_asym_E), 
+                            'g'^(~gw_asym_E*~srv_asym_E), ~sym>)
+                 ) @ #vk.13 )
+            case c_kdf2
+            solve( !KU( 'g'^(~asym_S*~srv_asym_E) ) @ #vk.16 )
+              case Get_pk
+              by solve( !KU( ~srv_asym_E ) @ #vk.18 )
+            next
+              case Pairing_2_su
+              solve( !KU( ~asym_S ) @ #vk.18 )
+                case Reveal_gw
+                solve( !KU( 'g'^(~gw_asym_E*~srv_asym_E) ) @ #vk.18 )
+                  case Pairing_1_us
+                  by solve( !KU( ~srv_asym_E ) @ #vk.19 )
+                next
+                  case Pairing_2_su
+                  by solve( !KU( ~gw_asym_E ) @ #vk.19 )
+                next
+                  case c_exp
+                  by solve( !KU( ~gw_asym_E ) @ #vk.21 )
+                qed
+              qed
+            next
+              case Scan_device_adversary
+              by solve( !KU( ~srv_asym_E ) @ #vk.18 )
+            next
+              case c_exp
+              solve( !KU( ~asym_S ) @ #vk.20 )
+                case Reveal_gw
+                by solve( !KU( ~srv_asym_E ) @ #vk.21 )
+              qed
+            qed
+          qed
+        qed
+      qed
+    next
+      case c_mac
+      solve( !KU( ~sym ) @ #vk.6 )
+        case Reveal_gw
+        by contradiction /* from formulas */
+      next
+        case Scan_device_adversary
+        by contradiction /* from formulas */
+      qed
+    qed
+  qed
+qed
+
+lemma key_secrecy:
+  all-traces
+  "∀ claimer_id secret #i.
+    (Claim_secret( claimer_id, secret ) @ #i) ⇒
+    ((¬(∃ #j. K( secret ) @ #j)) ∨
+     (∃ claimee_id #k.
+       (A_reveal( claimee_id ) @ #k) ∧ (A_honest( claimee_id ) @ #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ claimer_id secret #i.
+  (Claim_secret( claimer_id, secret ) @ #i)
+ ∧
+  (∃ #j. (K( secret ) @ #j)) ∧
+  (∀ claimee_id #k.
+    (A_reveal( claimee_id ) @ #k) ∧ (A_honest( claimee_id ) @ #i) ⇒ ⊥)"
+*/
+simplify
+solve( Srv_key_established( claimer_id, gw_id, <key_us, key_su>
+       ) ▶₁ #i )
+  case Pairing_2_su
+  solve( !KU( kdf1(<'g'^(~asym_S*~srv_asym_E), x, ~gw_sym>)
+         ) @ #vk.9 )
+    case c_kdf1
+    solve( !KU( ~gw_sym ) @ #vk.20 )
+      case Reveal_gw
+      by contradiction /* from formulas */
+    next
+      case Scan_device_adversary
+      solve( !KU( kdf2(<'g'^(~asym_S*~srv_asym_E), x, ~gw_sym>)
+             ) @ #vk.11 )
+        case c_kdf2
+        solve( !KU( 'g'^(~asym_S*~srv_asym_E) ) @ #vk.19 )
+          case Get_pk
+          by solve( !KU( ~srv_asym_E ) @ #vk.21 )
+        next
+          case Pairing_2_su
+          solve( !KU( ~asym_S ) @ #vk.21 )
+            case Reveal_gw
+            by contradiction /* from formulas */
+          qed
+        next
+          case Scan_device_adversary
+          by solve( !KU( ~srv_asym_E ) @ #vk.21 )
+        next
+          case c_exp
+          solve( !KU( ~asym_S ) @ #vk.23 )
+            case Reveal_gw
+            by contradiction /* from formulas */
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma verification_intend:
+  all-traces
+  "∀ gw_id gw_tid session_keys #i.
+    (A_gw_established_key( gw_id, gw_tid, session_keys ) @ #i) ⇒
+    (∃ gw_tid2 #j.
+      (A_button_pushed( gw_id, gw_tid2 ) @ #j) ∧
+      (¬(∃ #k.
+          (A_gw_button_timeout( gw_id, gw_tid2 ) @ #k) ∧ (#k < #i))))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ gw_id gw_tid session_keys #i.
+  (A_gw_established_key( gw_id, gw_tid, session_keys ) @ #i)
+ ∧
+  ∀ gw_tid2 #j.
+   (A_button_pushed( gw_id, gw_tid2 ) @ #j)
+  ⇒
+   ∃ #k. (A_gw_button_timeout( gw_id, gw_tid2 ) @ #k) ∧ #k < #i"
+*/
+simplify
+solve( !Gateway( gw_id, ~gw_asym_S, ~sym ) ▶₀ #i )
+  case Register_gw
+  solve( Gw_pairing_initiated( $gw_id, ~gw_asym_E ) ▶₁ #i )
+    case Pairing_1_us
+    by solve( Gw_pairing_initiated( $gw_id, ~gw_asym_E ) ▶₀ #k )
+  qed
+qed
+
+/* All well-formedness checks were successful. */
+
+end

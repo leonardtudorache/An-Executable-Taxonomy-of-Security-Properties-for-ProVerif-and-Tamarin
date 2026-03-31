@@ -1,0 +1,199 @@
+(* Remark! protocol with Fix - All Authentication Properties. Result: No attacks*)
+(* All parties are honest*)
+
+free ch: channel.
+(*Public channels represent the bulletin-boards: NET publishes on bbn, and Exam Authority publishes on bba*)
+free bbn: channel.
+free bba: channel.
+
+type identity.
+type pkey.
+type skey.
+type coins.
+type role.
+
+(*We distinguish between the candidates and the examiners using the roles C and E, however each has a public key as an identity, 
+which is uniquely mapped to a pseudonym by the NET*)
+free C: role.
+free E: role.
+free label: bitstring.
+
+table publickey(role, bitstring, pkey).
+
+(*Events*)
+event reg (pkey).
+event submitted(pkey, bitstring, bitstring).
+event collected(pkey,bitstring,bitstring).
+event distributed(pkey,bitstring,bitstring,pkey,pkey).
+event marked(pkey, bitstring).
+event recorded(pkey, bitstring).
+event notified(pkey, bitstring).
+
+
+
+(*Answer Authentication*)
+query px: pkey, thequest: bitstring, theansw: bitstring; inj-event(collected(px, thequest, theansw)) ==> inj-event(submitted(px, thequest,theansw)).
+
+
+(*Examiner(Mark) Authentication*)
+query px: pkey, py: pkey, px_r: pkey, thequest: bitstring, theansw: bitstring, mark: bitstring; inj-event(recorded(py,mark)) ==> event(marked(py, mark)).
+
+
+
+
+
+
+(* Pseudonym *)
+fun pk(skey): pkey.
+fun pseudo_pub(pkey,bitstring):pkey.
+fun pseudo_priv(skey,bitstring):skey. 
+fun exp(bitstring):bitstring.
+fun find_partition(bitstring, bitstring):bitstring.
+fun hash(bitstring, bitstring, pkey, bitstring):bitstring.
+
+reduc forall  k: skey, rce:bitstring; checkpseudo(pseudo_pub(pk(k),rce), pseudo_priv(k,exp(rce))) = true.
+
+(* El-Gamal Probabilistic Public key encryption *)
+fun int_encrypt(bitstring, pkey, coins): bitstring.
+fun decrypt(bitstring,skey):bitstring
+  reduc 
+    forall m: bitstring, k: skey, r:coins;  decrypt(int_encrypt(m,pk(k),r),k) = m
+    otherwise  forall m: bitstring, k: skey, r:coins, rce:bitstring;  decrypt(int_encrypt(m,pseudo_pub(pk(k),rce),r), pseudo_priv(k,exp(rce))) = m.
+
+letfun encrypt(x:bitstring, y:pkey)= new r:coins; int_encrypt(x,y,r).
+
+(* Signature *)
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; getmess(sign(m,k)) = m.
+fun checksign(bitstring, pkey):bitstring
+  reduc 
+     forall m: bitstring, k: skey; checksign(sign(m,k), pk(k)) = m
+     otherwise forall m: bitstring, k: skey, rce:bitstring; checksign(sign(m,pseudo_priv(k,exp(rce))),pseudo_pub(pk(k),rce)) = m.
+
+
+(*---------------Protocol-----------------*)
+
+(*----------NET-----------------*)
+let NET (skN:skey, pkA:pkey, rc:bitstring) =
+in(ch, (R: role));
+get publickey(=R, rx, pkX) in
+let hx = exp(rx) in
+let pseudo_X = pseudo_pub(pkX,rx) in 
+let spseX = sign ((pseudo_X, hx, R), skN) in 
+out(bbn, ( pseudo_X, hx, R, spseX));
+
+(*Reveal RC*)
+let signetX = sign( (rc), skN) in
+let encsignetX = encrypt ( (rc, signetX), pkA) in
+out(ch, encsignetX).
+
+(*----------Exam Authority-----------------*)
+let EA (skA:skey, pkN:pkey, ques:bitstring, map:bitstring) =
+
+in(bbn, (pseudo_C:pkey, hc:bitstring, r: role, spseC:bitstring));
+if (pseudo_C, hc, r) = checksign(spseC, pkN) && r = C then 
+(*The candidate is considered registered when the Exam Authority receives his pseudonym and successfully checks the signature of the NET*)
+event reg(pseudo_C);
+(* Examination *)
+let sques = sign(ques, skA) in
+let eques = encrypt( (ques,sques), pseudo_C) in 
+out(bba, eques);
+in(ch, eca:bitstring);
+let ((=ques, ans:bitstring, =pseudo_C), sca:bitstring) = decrypt(eca, skA) in 
+if (ques, ans, pseudo_C) = checksign(sca, pseudo_C) then
+(*At this point, Exam Authority collects the exam form  (ques, ans) from the candidate with pseudonym pseudo_C*)
+event collected(pseudo_C, ques, ans);
+new alpha: bitstring;
+let ca = hash(ques, ans, pseudo_C, alpha) in 
+let sca' = sign(ca, skA)  in 
+let eca' = encrypt((ca, sca'), pseudo_C) in 
+out(bba, eca');
+
+(* Marking *)
+in(bbn, (pseudo_E:pkey, he:bitstring, rolet: role, spseE:bitstring));
+if (pseudo_E, he, rolet) = checksign(spseE, pkN) && rolet = E then 
+(*Fix: the pseudonym pseudo_E of the target Examiner is added to the signed form --distributed by the Exam Authority-- to be marked. 
+So, only the intended Examiner will mark the form after checking the signature of the Exam Authority*)
+
+
+(*The Exam Authority distributed the form (pseudo_C,ques,ans) identified by pseudo_C (id_form = pseudo_C) to the Examiner pseudo_E*)
+event distributed(pseudo_C,ques,ans,pseudo_C,pseudo_E);
+out(bba, sign(label, skA));
+in(ch, ema:bitstring);
+let part = find_partition(label, map) in
+let ((mark:bitstring, =part), sma:bitstring) = decrypt(ema, skA) in
+if (mark, part) = checksign(sma, pseudo_E) then
+event recorded(pseudo_E, mark);
+
+(* Notification *)
+(*let ma = (ques, ans, pseudo_C, mark) in 
+let sign_ma = sign(ma, skA) in
+let ema' = encrypt((ma, sign_ma), pseudo_C) in 
+out(bba, ema');*)
+
+(*Reveal ID*)
+in(ch, encsignetX: bitstring).
+
+(*----------Candidate-----------------*)
+
+let Cand (skC:skey, pkA:pkey, pkN:pkey, ans:bitstring) =
+
+(* Cand Registration *)
+in(bbn, (pseudo_C:pkey, hc:bitstring, r: role, spseC:bitstring));
+if (pseudo_C, hc, r) = checksign(spseC, pkN) && r = C then 
+let priv_C = pseudo_priv(skC, hc) in 
+if checkpseudo(pseudo_C, priv_C) =true then 
+
+(* Examination *)
+in(bba, eques:bitstring);
+let (ques: bitstring, sques:bitstring) = decrypt(eques, priv_C) in
+if ques=checksign(sques, pkA) then
+let ca = (ques, ans, pseudo_C) in 
+let sca = sign(ca,priv_C) in 
+let eca = encrypt((ca, sca), pkA) in 
+(*The candidate pseudo_C  submits his form (ques, ans)*)
+event submitted(pseudo_C, ques, ans);
+out(ch, eca);
+in(bba, eca':bitstring);
+let (eca_h:bitstring, sca':bitstring) = decrypt(eca', priv_C) in 
+0.
+
+(*----------Examiner-----------------*)
+
+let Ex (skE:skey, pkA:pkey, pkN:pkey, mark:bitstring, map:bitstring) =
+
+(* Examiner Registration *)
+in(bbn, (pseudo_E:pkey, he:bitstring, r: role, spseE:bitstring));
+if (pseudo_E, he, E) = checksign(spseE, pkN) then 
+let priv_E = pseudo_priv(skE, he) in 
+if checkpseudo(pseudo_E, priv_E) =true then 
+
+(* Marking *)
+in(bba, ema':bitstring);
+let (label1:bitstring) = checksign(ema', pkA) in
+let part = find_partition(label1, map) in
+let ma = (mark, part) in 
+let sma = sign(ma,priv_E) in 
+let ema = encrypt((ma, sma), pkA) in
+event marked(pseudo_E, mark);
+out(ch, ema).
+
+
+(*----------Main-----------------*)
+process
+
+
+(*Products of the secret exponent values of the servers (represented by the NET): rc for the candidates and re for the examiners.*)
+new rc: bitstring;
+new re: bitstring;
+new map: bitstring;
+new mark:bitstring;
+(*We assume one NET and one Exam Authority*)
+new skA: skey; let pkA = pk(skA) in out (ch, pkA); 
+new skN: skey; let pkN = pk(skN) in out (ch, pkN); 
+
+(!( NET(skN, pkA, rc))) | 
+(!( new ques:bitstring;  EA(skA, pkN, ques, map))) |
+(!( new skC: skey; let pkC = pk(skC) in out (ch, pkC);  new ans:bitstring; insert publickey(C, rc, pkC); Cand(skC, pkA, pkN, ans))) |
+(!( new skE: skey; let pkE = pk(skE) in out (ch, pkE);  insert publickey(E, re, pkE); Ex(skE, pkA, pkN, mark, map)))
+

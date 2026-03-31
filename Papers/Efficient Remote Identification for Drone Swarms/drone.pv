@@ -1,0 +1,69 @@
+(* Symmetric encryption *)
+type key.
+
+fun senc(bitstring, key): bitstring.
+
+reduc forall m: bitstring, k:key; sdec(senc(m,k),k)=m.
+
+(* ECC key *)
+type ec_skey.
+type ec_pkey.
+
+(* Message authentication code *)
+fun mac_h(key,ec_pkey,bitstring,ec_pkey): bitstring.
+
+(* Hash function *)
+fun h(key,ec_pkey): bitstring.
+
+(* typeConverter Function *)
+fun ec_pkey_to_b(ec_pkey):bitstring [data, typeConverter].
+fun ec_skey_to_b(ec_skey):bitstring [data, typeConverter].
+
+(* ECC Multiplication operation *)
+fun ECMul(bitstring, bitstring): bitstring.
+
+(* ECC Add operation *)
+fun ECAdd(bitstring, bitstring): bitstring.
+
+const P:bitstring.
+free c:channel.
+free gk:key [private].
+
+(* events *)
+event acceptDrone(bitstring).
+event termDrone(bitstring).
+event sendT(key).
+event receiveT(ec_pkey).
+
+(* queries *)
+query attacker(gk).
+query x:bitstring;event(termDrone(x))==>event(acceptDrone(x)).
+query x:ec_pkey, y:key;event(receiveT(x))==>event(sendT(y)).
+
+let drone(id_D:bitstring,id_R:bitstring, A:ec_pkey,r:ec_skey,pkR:ec_pkey,skD:ec_skey) =
+    let mac = mac_h(gk,A,id_D,pkR) in
+    event acceptDrone(mac);
+    out(c, (id_D, A, mac));
+    in(c, msg2:bitstring);
+    let (T:ec_pkey, =id_R, =A) = sdec(msg2, gk) in
+    event receiveT(T).
+    
+let reader(id_D:bitstring, id_R:bitstring, pkR:ec_pkey,T:ec_pkey) =
+    in(c, (id_D':bitstring, A:ec_pkey, mac:bitstring));
+    let (=id_D') = id_D in
+    let mac'= mac_h(gk,A,id_D,pkR) in
+    let (=mac') = mac in
+    event termDrone(mac');
+    event sendT(gk);
+    out(c, senc((T,id_R,A),gk)).
+
+process
+    new id_D:bitstring;
+    new id_R:bitstring;
+    new A:ec_pkey;
+    new pkR:ec_pkey;
+    new T:ec_pkey;
+    new r:ec_skey;
+    new skD:ec_skey;
+    
+    ((!drone(id_D,id_R,A,r,pkR,skD))|(!reader(id_D,id_R,pkR,T)))

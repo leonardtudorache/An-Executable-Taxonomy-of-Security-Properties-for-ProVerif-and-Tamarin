@@ -1,0 +1,51 @@
+
+free c: channel.
+
+type user.
+type resource.
+type permission.
+
+const READ: permission.
+const WRITE: permission.
+const ADMIN: permission.
+
+free Alice, Bob, Charlie: user.
+free Resource1, Resource2: resource.
+
+table AccessRights(user, resource, permission).
+
+event AccessGranted(user, resource, permission).
+event AccessRequest(user, resource, permission).
+event AccessDenied(user, resource, permission).
+
+query u:user, r:resource, p:permission; 
+    inj-event(AccessGranted(u,r,p)) ==> inj-event(AccessRequest(u,r,p)).
+
+
+let setupAccessRights() = 
+    insert AccessRights(Alice, Resource1, READ);
+    insert AccessRights(Alice, Resource1, WRITE);
+    insert AccessRights(Alice, Resource1, ADMIN);
+    insert AccessRights(Bob, Resource1, READ);
+    insert AccessRights(Charlie, Resource2, READ);
+    insert AccessRights(Charlie, Resource2, WRITE);
+    0.
+
+let resourceAccess(u: user) =
+    in(c, (r: resource, p: permission));
+    event AccessRequest(u,r,p);
+    get AccessRights(=u,=r,=p) in (
+        event AccessGranted(u,r,p);
+        out(c, true);
+        0
+    ) else (
+        event AccessDenied(u,r,p);
+        out(c, false);
+        0
+    ).
+
+process
+    setupAccessRights() |
+    (!resourceAccess(Alice)) |
+    (!resourceAccess(Bob)) |
+    (!resourceAccess(Charlie))

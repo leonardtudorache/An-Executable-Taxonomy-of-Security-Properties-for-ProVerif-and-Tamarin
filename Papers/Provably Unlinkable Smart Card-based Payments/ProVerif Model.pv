@@ -1,0 +1,362 @@
+(* RUNNING TIME  FOR ALL PROPERTIES: 99m43.840s *)
+
+free cuser, cout, card, term, bank: channel.
+
+free user: channel [private].
+
+type point. (* ecc public key *)
+type scalar. (* ecc secret key *)
+
+type key. (* for enc *)
+
+type sskey. (* generic sign-verify skey *)
+type pskey. (* generic sign-verify pkey *)
+type svkey. (* verhul sign-verify skey *)
+type pvkey. (* verhul sign-verify pkey *)
+
+
+type transaction.
+type text.
+
+
+const R: point [data].
+
+(* CONSTANTS TO IDENTIFY VARIOUS TYPES OF TRANSACTION *)
+const OK, NO,HI,LO, MM, ONLINE, OFFLINE, ACCEPT: text [data].
+
+fun smult(scalar, point): point.
+fun h(point): key.
+fun pks(sskey): pskey. (* generic sig ver key *)
+fun pkv(svkey): pvkey. (* verheul sig ver key *)
+
+
+fun enc(bitstring, key): bitstring.
+fun sign(bitstring, sskey): bitstring. (* generic sig *)
+fun vsign(point, svkey): point. (* verheul sig *)
+
+fun mac(bitstring, key): bitstring.
+
+reduc forall m: bitstring, k: key; dec(enc(m, k), k) = m.
+
+(* GENERIC SIGNATURE *)
+reduc forall x: bitstring, sk: sskey; check(sign(x, sk), pks(sk)) = x.
+
+(* VERHEUL BLIND SIGNATURE *)
+reduc forall pt: point, svk: svkey;           vcheck(vsign(pt, svk), pkv(svk)) = pt;
+    forall a: scalar, pt: point, svk: svkey;  vcheck(smult(a, vsign(pt, svk)), pkv(svk)) = smult(a, pt).
+
+
+(* SCALAR MULTIPLICATION EQUATIONS *)
+equation forall a: scalar, b: scalar;
+smult(a, smult(b, R)) = smult(b, smult(a, R)).
+equation forall a: scalar, b: scalar, c: scalar;
+smult(a, smult(b, smult(c, R))) = smult(b, smult(a, smult(c, R))).
+
+table si(text,text,key,point).
+
+
+(* TERMINAL AUTH CARD (1) *)
+
+event CRunning(point, point, bitstring, bitstring, bitstring, bitstring). (*at, atg, ecert, emcert, etx, eac*) 
+event TCommitWithC(point, point, bitstring, bitstring, bitstring, bitstring).
+
+query z1: point, z2: point, ecert: bitstring, emcert: bitstring, etx: bitstring, eac: bitstring;
+  inj-event(TCommitWithC(z1, z2, ecert, emcert, etx, eac)) ==> inj-event(CRunning(z1, z2, ecert, emcert, etx, eac)).
+
+
+
+(* TERMINAL AUTH CARD AND BANK (2) *)
+
+event TCommitWithBC(bitstring, bitstring, point, point, bitstring, bitstring, bitstring, bitstring). 
+event BRunningWithT(bitstring, bitstring).
+
+query req,resp: bitstring, z1: point, z2: point, ecert: bitstring, emcert: bitstring, etx: bitstring, eac: bitstring;
+    inj-event( TCommitWithBC(req, resp, z1, z2, ecert, emcert, etx, eac)) ==> 
+        inj-event( BRunningWithT(req, resp)) && inj-event(CRunning(z1, z2, ecert, emcert, etx, eac)).
+
+
+(* BANK AUTH TERMINAL AND CARD (3) *)
+
+event BCommitWithTC(bitstring).
+event TrunningWithBC(bitstring, point, point, bitstring, bitstring, bitstring, bitstring).
+
+query req: bitstring, z1: point, z2: point, ecert: bitstring, emcert: bitstring, etx: bitstring, eac: bitstring;
+    inj-event(BCommitWithTC(req)) ==> inj-event(TrunningWithBC(req, z1, z2, ecert, emcert, etx, eac)) &&
+                                       inj-event(CRunning(z1, z2, ecert, emcert, etx, eac)).
+
+
+
+(* BANK AND CARD AGREE ON EAC (4) // with just EAC also works *)
+
+event BCommitWithC(scalar, text, bitstring, bitstring). 
+event CRunningWithBank(scalar, text, bitstring, bitstring).
+
+query a:scalar, PAN:text, TX:bitstring, EAC: bitstring;
+    inj-event( BCommitWithC(a, PAN, TX, EAC)) ==> inj-event(CRunningWithBank(a, PAN, TX, EAC)).
+
+
+(* IF THE TERMINAL ACCEPTS A TRANSACTION, THE BANK WILL NOT REJECT IT *)
+
+event TAccept(key, bitstring). 
+event BReject(key, bitstring). 
+
+query  kbt: key, TX, eac: bitstring; 
+  event( TAccept(kbt, TX)) && (event (BReject(kbt, TX))) ==> false.
+
+
+(* SECRECY PROPERTIES // True = success*)
+event SecretKey(key).
+event SecretAC(bitstring).
+event SecretPin(text).
+event PinInCorrTerminal(text).
+
+query x:key; event(SecretKey(x)) && attacker(x) ==> false.
+query x:bitstring; event(SecretAC(x)) && attacker(x) ==> false.
+query x:text; event(SecretPin(x)) && attacker(x) ==> false.
+
+
+
+(* EXECUTABILITY // Not q A & B -> false = success *)
+
+(* sanity *)
+
+(* (1) *)
+query z1: point, z2: point, ecert: bitstring, emcert: bitstring, etx: bitstring, eac: bitstring;
+  event(TCommitWithC(z1, z2, ecert, emcert, etx, eac)) && 
+  event(CRunning(z1, z2, ecert, emcert, etx, eac)).
+
+
+(* (2) *)
+query req, resp: bitstring, z1: point, z2: point, ecert: bitstring, emcert: bitstring, etx: bitstring, eac: bitstring;
+    event(TCommitWithBC(req, resp, z1, z2, ecert, emcert, etx, eac)) && 
+    event(BRunningWithT(req, resp)) &&
+    event(CRunning(z1, z2, ecert, emcert, etx, eac)).
+
+
+(* (3) *)
+query req: bitstring, z1: point, z2: point, ecert: bitstring, emcert: bitstring, etx: bitstring, eac: bitstring;
+    event(BCommitWithTC(req)) && 
+    event(TrunningWithBC(req, z1, z2, ecert, emcert, etx, eac)) &&
+    event(CRunning(z1, z2, ecert, emcert, etx, eac)).
+
+
+(* (4) // with just EAC also works*)
+query a:scalar, PAN:text, TX:bitstring, EAC: bitstring;
+    event( BCommitWithC(a, PAN, TX, EAC)) && event(CRunningWithBank(a, PAN, TX, EAC)).
+
+
+(* there is a successful run *)
+event CAccept(text, bitstring). 
+event BAccept(key, text, bitstring).
+query kbt:key, PAN: text, TX: bitstring;
+    event(CAccept(PAN, TX)) && event(BAccept(kbt, PAN, TX)) && event (TAccept(kbt, TX)).
+
+
+
+(* TESTING EVENTS *)
+event TReject(key, bitstring). (* kbt, TX *)
+event ProcessingTransation(bitstring,bitstring).
+event TerminalProcessingTransaction(bitstring,bitstring).
+event TERM_CARD_TX_PIN(bitstring, text).
+event TERM_BANK_TX_PIN(bitstring, text).
+
+
+(* EVERY TRANSACTION CAN BE TREATED AT MOST ONCE *)
+restriction sessNonce1, sessNonce2:bitstring, TX: bitstring;
+  event (ProcessingTransation(sessNonce1, TX)) && event (ProcessingTransation(sessNonce2, TX))
+    ==> sessNonce1 = sessNonce2.
+
+restriction sessNonce1, sessNonce2:bitstring, TX: bitstring;
+      event (TerminalProcessingTransaction(sessNonce1, TX))
+      && event (TerminalProcessingTransaction(sessNonce2, TX))
+        ==> sessNonce1 = sessNonce2.
+
+(* SAME PIN TRANSMITTED TO CARD AND TO BANK *)
+restriction PIN1, PIN2:text, TX: bitstring;
+              event (TERM_CARD_TX_PIN(TX, PIN1))
+              && event (TERM_BANK_TX_PIN(TX, PIN2))
+                ==> PIN1 = PIN2.
+
+
+
+
+
+(************* CARD PROCESSES ***************)
+let CardStartSession(PAN: text,PIN: text, mk: key, pkS: pskey, crt: point, c: scalar) =
+  in(card, Z1: point);
+  let PKC = smult(c, R) in
+  new a: scalar;
+  let Z2:point = smult(a, PKC) in
+  out(card,Z2);
+  let k:key = h(smult(a, smult(c, Z1))) in (* key is established *)
+  event SecretPin(PIN); 
+  event SecretKey(mk);
+  in(card, EMC: bitstring);
+  let MC = dec(EMC, k) in
+  let ((=MM,pkBT: point), sigPS: bitstring) = MC in
+  if check(sigPS, pkS) = (MM, pkBT) then
+  let M = (smult(a, PKC), smult(a, crt)) in
+  out(card, enc(M,k));
+
+  (* transaction *)
+  in(card, ETX: bitstring);
+  let (TX:bitstring,uPin:text) = dec(ETX, k) in
+  let (TXdata:transaction,TXtype:text) = TX in
+
+
+  let ACok = (a,PAN, TX, OK) in
+  let ACno = (a,PAN, TX, NO) in
+  event SecretAC(ACok);
+
+  let ACok_mac = mac(ACok, mk) in
+  let ACno_mac = mac(ACno, mk) in
+
+  let shk = h(smult(a,smult(c, pkBT))) in
+
+  if (TXtype = HI && uPin = PIN) || (TXtype = LO) then
+    ( let EAC = enc((ACok, ACok_mac), shk) in
+      event CAccept(PAN, TX);
+      event CRunning(Z1, Z2, EMC, enc(M,k), ETX, enc((TX,OK, EAC), k));
+      event CRunningWithBank(a, PAN, TX, EAC);
+      out(card, enc((TX,OK, EAC), k))
+    )
+    else
+    ( let EAC = enc((ACno, ACno_mac), shk) in
+      event CRunning(Z1, Z2, EMC, enc(M,k), ETX, enc((TX,NO, EAC), k));
+      event CRunningWithBank(a, PAN, TX, EAC);
+      out(card, enc((TX,NO, EAC), k))
+    ).
+
+
+
+(********* TERMINAL PROCESSES *****************)
+
+let TerminalStartSession(TXtype:text, CONNECTIONtype:text,
+                        user:channel, pkMM: pvkey, crt:bitstring, kbt: key) =
+  new TXdata: bitstring;
+  let TX = (TXdata, TXtype) in
+  new t: scalar;
+  let Z1 = smult(t, R) in
+  out(term, Z1);
+  in(term, Z2: point);
+  let k = h(smult(t, Z2)) in (* key is established *)
+  out(term, enc(crt, k));
+  in(term, EM: bitstring);
+  let (M1: point, M2: point) = dec(EM, k) in
+  if (M1 = vcheck(M2, pkMM)) && (M1 = Z2) then
+
+  (* AUTHORIZE TRANSACTION *)
+  in(user,uPIN:text); event TERM_CARD_TX_PIN(TX, uPIN);
+  out(term, enc((TX,uPIN), k));
+
+  in(term, EEAC: bitstring);
+  let (=TX, Creply: text, EAC: bitstring) = dec(EEAC, k) in
+  new nonce:bitstring;
+  event TerminalProcessingTransaction(nonce, TX);
+  event TERM_BANK_TX_PIN(TX, uPIN);
+  event TCommitWithC(Z1, Z2, enc(crt, k), EM, enc((TX,uPIN), k), EEAC);
+  let req = enc((TX, Z2, EAC, uPIN), kbt) in 
+  event TrunningWithBC(req, Z1, Z2, enc(crt, k), EM, enc((TX,uPIN), k), EEAC);
+  out(term, req);
+
+  if CONNECTIONtype = OFFLINE && Creply = OK
+  then ( event TAccept(kbt, TX))
+
+  else if CONNECTIONtype = OFFLINE && Creply = NO
+  then ( event TReject(kbt, TX) )
+
+  else (* WE HAVE CONNECTIONtype = ONLINE *)
+  (
+    in(term, EReply: bitstring);
+    let (=TX,reply:text) = dec(EReply, kbt) in
+    event TCommitWithBC(enc((TX, Z2, EAC, uPIN), kbt), EReply, Z1, Z2, enc(crt, k), EM, enc((TX,uPIN), k), EEAC);
+    if (reply = ACCEPT) then event TAccept(kbt, TX)
+  ).
+
+
+let Terminal(user:channel, pkMM: pvkey, crt:bitstring, kbt: key)  =
+    TerminalStartSession(HI, ONLINE, user, pkMM, crt, kbt) |
+    TerminalStartSession(LO, ONLINE, user, pkMM, crt, kbt) |
+    TerminalStartSession(HI, OFFLINE, user, pkMM, crt, kbt).
+
+
+(* BANK PROCESSES *)
+let BankProcessTransaction(kbt:key, bt: scalar) =
+new sessNonce:bitstring;
+  in(bank, x: bitstring);
+  let (TX':bitstring,Z2:point,EAC:bitstring,uPIN:text) = dec(x, kbt) in
+  event ProcessingTransation(sessNonce, TX'); (* NOTE: THIS MODELS THE FRESHNESS CHECK *)
+  let kbc = h(smult(bt, Z2)) in
+
+  let y:bitstring = dec(EAC, kbc) in
+
+  let (AC:bitstring,ACmac:bitstring) = y in
+  let (xa:scalar, PAN:text, TX:bitstring, pinV:text) = AC in
+
+  get si(=PAN, PIN: text, mk: key, pkC: point) in
+
+  
+  if (mac(AC, mk) = ACmac) && (TX=TX')
+  then
+  (
+  if smult(xa, pkC) = Z2 then
+    (
+    let (TXdata:transaction,TXtype:text) = TX in
+    if TXtype = LO then
+    ( event BAccept(kbt, PAN, TX); 
+      event BRunningWithT(x, enc((TX,ACCEPT), kbt));
+      event BCommitWithTC(x);
+      event BCommitWithC(xa, PAN, TX, EAC);
+      out(bank, enc((TX,ACCEPT), kbt)) )
+    else
+    if TXtype = HI then
+        if (pinV = OK) || (uPIN = PIN) then
+        ( event BAccept(kbt, PAN, TX); 
+          event BRunningWithT(x, enc((TX,ACCEPT), kbt));
+          event BCommitWithTC(x);
+          event BCommitWithC(xa, PAN, TX, EAC);
+          out(bank, enc((TX,ACCEPT), kbt)) )
+        else
+        (
+          event BReject(kbt, TX);
+          event BRunningWithT(x, enc((TX, NO), kbt));
+          event BCommitWithTC(x);
+          event BCommitWithC(xa, PAN, TX, EAC);
+          out(term, enc((TX, NO), kbt))
+          )
+    else (
+      event BReject(kbt, TX);
+      event BRunningWithT(x, enc((TX, NO), kbt));
+      event BCommitWithTC(x);
+      event BCommitWithC(xa, PAN, TX, EAC);
+      out(term, enc((TX, NO), kbt))
+        )
+      )
+    ).
+
+
+
+process
+    new s: sskey; new chiMM: svkey;
+    out(cout, pks(s)); out(cout, pkv(chiMM));
+    (
+      (* CARDS AND CARD SESSIONS *)
+      ! (new PIN: text; new mk: key; new c: scalar; new PAN: text;
+        let crtC = vsign(smult(c,R), chiMM) in
+        (* uncomment to verify that even if the (unblinded) card's public key is out, the system is still secure*)
+        (* out(cout, smult(c, R)); *)
+        (* CARD PAYMENT SESSIONS  *)
+        ! CardStartSession(PAN, PIN, mk, pks(s), crtC, c)
+        (* STORE INFORMATION RELEVANT FOR THE CARD TO BE USED BY USER AND BANK *)
+        | ! out(user, PIN) | 
+         insert si(PAN, PIN, mk, smult(c,R))
+        )
+      |
+      (* BANKS, TERMINALS AND THEIR SESSIONS *)
+      new bt: scalar;
+      ( ! new kbt:key; (* PAYMENT SESSIONS *)
+        (  BankProcessTransaction(kbt, bt) |
+          let crtT = ((MM, smult(bt, R)), sign((MM, smult(bt, R)), s)) in
+             Terminal(user, pkv(chiMM), crtT, kbt)
+        ) )
+    )

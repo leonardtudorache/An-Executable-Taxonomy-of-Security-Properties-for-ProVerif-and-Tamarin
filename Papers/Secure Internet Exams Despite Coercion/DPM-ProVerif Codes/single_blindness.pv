@@ -1,0 +1,222 @@
+(* Remark! protocol with Fix- Anonymous Examiner  *)
+(* Honest NET, EA,  and the two Examiners in the definition*)
+(* Dishonest  Co-Examiners, and Candidates*)
+(* Necessary hypotheses: Pseudonyms are published in random order. *) 
+(* Different roles for the two examiners in the definition to avoid false attacks. *)
+(* Result: No Attack *)
+
+free ch: channel.
+(*Public channels representing the bulletin-boards: NET publishes on bbn, and Exam Authority publishes on bba*)
+free bbn: channel.
+free bba: channel.
+
+free mark1, mark2:bitstring.
+free ans1, ans2: bitstring.
+
+type identity.
+type pkey.
+type skey.
+type coins.
+type role.
+
+(*Roles to identify the two honest Examiners*)
+free E1: role.
+free E2: role.
+
+(*Roles of the dishonest Candidates and Examiners*)
+
+free C: role.
+free E: role.
+free label1, label2 : bitstring.
+
+table publickey(role, bitstring, pkey).
+
+
+(* Pseudonym *)
+fun pk(skey): pkey.
+fun pseudo_pub(pkey,bitstring):pkey.
+fun pseudo_priv(skey,bitstring):skey. 
+fun exp(bitstring):bitstring.
+(*Below function translates a label into its corresponding partition using a secret*)
+fun find_partition(bitstring, bitstring):bitstring.
+
+reduc forall  k: skey, rce:bitstring; checkpseudo(pseudo_pub(pk(k),rce), pseudo_priv(k,exp(rce))) = true.
+
+(* El-Gamal Probabilistic Public key encryption *)
+fun int_encrypt(bitstring, pkey, coins): bitstring.
+fun decrypt(bitstring,skey):bitstring
+  reduc 
+    forall m: bitstring, k: skey, r:coins;  decrypt(int_encrypt(m,pk(k),r),k) = m
+    otherwise  forall m: bitstring, k: skey, r:coins, rce:bitstring;  decrypt(int_encrypt(m,pseudo_pub(pk(k),rce),r), pseudo_priv(k,exp(rce))) = m.
+
+letfun encrypt(x:bitstring, y:pkey)= new r:coins; int_encrypt(x,y,r).
+
+(* Signature *)
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; getmess(sign(m,k)) = m.
+fun checksign(bitstring, pkey):bitstring
+  reduc 
+     forall m: bitstring, k: skey; checksign(sign(m,k), pk(k)) = m
+     otherwise forall m: bitstring, k: skey, rce:bitstring; checksign(sign(m,pseudo_priv(k,exp(rce))),pseudo_pub(pk(k),rce)) = m.
+
+(*---------------Protocol-----------------*)
+
+(*----------NET-----------------*)
+let NETC(skN:skey, pkA:pkey, rc:bitstring) =
+new skC1: skey; 
+let pkC1 = pk(skC1) in 
+out (ch, (pkC1, skC1)); 
+new skC2: skey; 
+let pkC2 = pk(skC2) in 
+out (ch, (pkC2, skC2)); 
+let hx = exp(rc) in
+let pseudo_X1 = pseudo_pub(pkC1,rc) in 
+let spseX1 = sign ((pseudo_X1, hx, C), skN) in 
+out(bbn, ( pseudo_X1, hx, C, spseX1));
+let pseudo_X2 = pseudo_pub(pkC2,rc) in 
+let spseX2 = sign ((pseudo_X2, hx, C), skN) in 
+out(bbn, ( pseudo_X2, hx, C, spseX2));
+
+(*Reveal RC*)
+let signetX = sign( (rc), skN) in
+let encsignetX = encrypt ( (rc, signetX), pkA) in
+(*out(ch, encsignetX). *)
+0.
+
+(*----------NET for the two honest Examiners-----------------*)
+let NETE (skN:skey, pkA:pkey, chane: channel, chanex1: channel, chanex2: channel) =
+get publickey(=E1, rx, pkX) in
+let hx = exp(rx) in
+let pseudo_X = pseudo_pub(pkX,rx) in 
+let spseX = sign ((pseudo_X, hx, E), skN) in 
+get publickey(=E2, rx2, pkX2) in
+let hx2 = exp(rx2) in
+let pseudo_X2 = pseudo_pub(pkX2,rx2) in 
+let spseX2 = sign ((pseudo_X2, hx2, E), skN) in 
+(*Pseudonyms of the two honest Examiners are published in random order.*)
+out(chanex1, (pseudo_X, hx, E, spseX));
+out(chanex2, (pseudo_X2, hx2, E, spseX2));
+out(chane, ((pseudo_X, hx, E, spseX), (pseudo_X2, hx2, E, spseX2)));
+(*out(bbn, (pseudo_X, hx, E, spseX))  ;
+out(bbn, (pseudo_X2, hx2, E, spseX2)) ; *)
+out(bbn, (pseudo_X, hx, E, spseX)) ;
+out(bbn, (pseudo_X2, hx2, E, spseX2));
+(* No Reveal RE, otherwise trivial attack!*)
+0.
+
+(*----------Examiner-----------------*)
+
+let Ex (skE:skey, pkA:pkey, pkN:pkey, mark:bitstring, rl:role, chan1: channel, chanex: channel, chan2: channel, map: bitstring) =
+out(ch,skE);
+(* chan1 is equal to chana|chanb in EA process)
+(* chan2 is equal to chan1|chan2 in EA process)
+(* chanex is equal to chanX1|chanX2 in NETE process)
+(* Examiner Registration *)
+in(chanex, (pseudo_E:pkey, he:bitstring, r: role, spseE:bitstring));
+if (pseudo_E, he, r) = checksign(spseE, pkN)  && r = rl then 
+let priv_E = pseudo_priv(skE, he) in 
+if checkpseudo(pseudo_E, priv_E) =true then 
+
+(* Marking *)
+in(chan1, label:bitstring);
+
+let ma = (mark, find_partition(label, map)) in 
+let sma = sign(ma,priv_E) in 
+let ema = encrypt((ma, sma), pkA) in
+
+out(ch, ema);
+out(chan2, ema);
+(*Because of the probabilistic encryption, the examiner can even reveal the real map. (The suggestion in protocol is to reveal a fake map) *)
+(* new map': bitstring; out(ch, (map', label));*)
+out(ch, (map, label));
+0.
+
+let EA (skA:skey, pkN:pkey, ques:bitstring, cand:role, ex:role, chane: channel, chana: channel, chanb: channel, chan1: channel ,chan2: channel, map: bitstring) =
+
+new alpha: bitstring;
+in(ch, (pseudo_C1:pkey, hc1:bitstring, r: role, spseC1:bitstring));
+in(ch, (pseudo_C2:pkey, hc2:bitstring, =r, spseC2:bitstring));
+if (pseudo_C1<>pseudo_C2 ) then 
+if (pseudo_C1, hc1, cand) = checksign(spseC1, pkN) && r = cand then 
+if (pseudo_C2, hc2, cand) = checksign(spseC2, pkN) && r = cand then 
+(* Examination *)
+(*let sques = sign(ques, skA) in
+let eques1 = encrypt( (ques,sques), pseudo_C1) in 
+let eques2 = encrypt( (ques,sques), pseudo_C2) in *)
+out(bba, ques);
+in(ch, eca1:bitstring);
+let ((=ques, ansx:bitstring, =pseudo_C1), sca1:bitstring) = decrypt(eca1, skA) in 
+if (ques, ansx, pseudo_C1) = checksign(sca1, pseudo_C1) then
+
+in(ch, eca2:bitstring);
+let ((=ques, ansb:bitstring, =pseudo_C2), sca2:bitstring) = decrypt(eca2, skA) in 
+if (ques, ansb, pseudo_C2) = checksign(sca2, pseudo_C2) then
+
+let ca1 = (ques, ansx, pseudo_C1, alpha) in 
+let sca'1 = sign(ca1, skA)  in 
+let eca'1 = encrypt((ca1, sca'1), pseudo_C1) in 
+out(bba, eca'1);
+
+let ca2 = (ques, ansb, pseudo_C2, alpha) in 
+let sca'2 = sign(ca2, skA)  in 
+let eca'2 = encrypt((ca2, sca'2), pseudo_C2) in 
+out(bba, eca'2);
+
+(* Marking *)
+in(chane, ((pseudo_E1:pkey, he1:bitstring, rolet1: role, spseE1:bitstring), (pseudo_E2:pkey, he2:bitstring, rolet2: role, spseE2:bitstring)));
+if (pseudo_E1, he1, ex) = checksign(spseE1, pkN) && rolet1 = ex then 
+if (pseudo_E2, he2, ex) = checksign(spseE2, pkN) && rolet2 = ex then 
+
+let (x: bitstring, y: bitstring) = (label1, label2) in
+
+if (ansx=ans1 && ansb=ans2) || (ansb=ans1 && ansx=ans2) then (*zkp group membership? *)
+out(chana, x);
+out(chanb, y);
+out(ch, (x, y)); 
+
+in(chan1, ema1:bitstring);
+in(chan2, ema2:bitstring);
+let part1 = find_partition(label1, map) in
+let part2 = find_partition(label2, map) in
+let ((ma1:bitstring, =part1), sma1:bitstring) = decrypt(ema1, skA) in 
+if (ma1, part1) = checksign(sma1, pseudo_E1) then
+let ((ma2:bitstring, =part2), sma2:bitstring) = decrypt(ema2, skA) in 
+if (ma2, part2) = checksign(sma2, pseudo_E2)  then 
+
+if ema1<> ema2 then 
+
+0.
+
+(*----------Main-----------------*)
+process
+
+(*Products of the secret exponent values of the servers (represented by the NET): rc for the candidates and re for the examiners.*)
+new rc: bitstring;
+new re: bitstring;
+
+(*We assume one NET and one Exam Authority*)
+new skA: skey; let pkA = pk(skA) in out (ch, pkA); (*The secret key of the Exam Authority is given to the attacker*)
+new skN: skey; let pkN = pk(skN) in out (ch, pkN); 
+
+(*Keys of the two honest Examiners*)
+new skE1: skey; let pkE1 = pk(skE1) in out (ch, pkE1); insert publickey(E1, re, pkE1); 
+new skE2: skey; let pkE2 = pk(skE2) in out (ch, pkE2); insert publickey(E2, re, pkE2); 
+
+new chana: channel;
+new chanb: channel;
+new chanc: channel;
+new chand: channel;
+new chane: channel;
+new chanex1: channel;
+new chanex2: channel;
+new chan1: channel;
+new chan2: channel;
+new map: bitstring;
+
+(* Honest Parties *)
+(NETC(skN, pkA, rc)) |
+ (NETE(skN, pkA, chane, chanex1, chanex2)) |
+( new ques:bitstring;  EA(skA, pkN, ques, C, E,chane, chana, chanb, chan1, chan2, map)) |
+ (Ex(skE1, pkA, pkN, choice[mark1,mark2], E, chana, chanex1, chan1, map) ) |
+ (Ex(skE2, pkA, pkN, choice[mark2,mark1], E, chanb, chanex2, chan2, map) ) 
+(* Dishonest Candidates and Co-Examiners *)

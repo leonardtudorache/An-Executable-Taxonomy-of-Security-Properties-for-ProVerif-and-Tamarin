@@ -1,0 +1,47 @@
+free c: channel.
+
+type skey.
+type pkey.
+
+table commit(bitstring, bitstring).
+free skA: skey [private].
+
+fun pk(skey): pkey.
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
+
+event committed(bitstring, bitstring).
+event check().
+
+set preciseActions = true.
+
+event bad_equivocation().
+
+query tag: bitstring, m1: bitstring, m2: bitstring;
+      event(committed(tag, m1)) && event(committed(tag, m2)) ==> m1 = m2.
+
+(* Also show no explicit violation happens *)
+query event(bad_equivocation()).
+
+let signer =
+    in(c, tag: bitstring);     
+    in(c, m: bitstring);       
+
+    get commit(tag_1, m_old: bitstring) in
+    (
+        if m <> m_old then
+        event bad_equivocation();  
+        0                          
+    )
+    else
+    insert commit(tag, m) ;         
+    event committed(tag, m);
+    let s: bitstring = sign(m, skA) in
+    event check();
+    out(c, (tag, m, s))
+    .
+
+process
+    let pkA: pkey = pk(skA) in
+    out(c, pkA);
+    signer

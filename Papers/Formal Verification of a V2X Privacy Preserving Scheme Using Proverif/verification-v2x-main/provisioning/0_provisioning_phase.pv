@@ -1,0 +1,333 @@
+(* 
+    DESCRIPTION: Only enrollment and pseudonym provisioning phase
+    NOTES:
+	- one vehicle tested, multiple other vehicles
+	- multiple attackers
+	- no phases (only enrollment, pseudonym certificate provisioning, message exchange)
+	- no revocation phase
+	- only one revoked vehicle in the revocation list
+*)
+
+
+free ch:channel. 	(* Public channel *)
+
+type pkey.
+type skey.
+type result.
+type gmskey.
+type gskey.
+type gpkey.
+type certype.
+
+const revoke_request:bitstring.
+const groupkey_request:bitstring.
+const groupkey_response:bitstring.
+const rsu:bitstring.
+const err_gkreq:bitstring.
+
+(* Asymmetric signature *)
+fun pk(skey):pkey.
+fun sign(bitstring, skey):bitstring.
+fun ok():result.
+reduc forall m:bitstring, sk:skey; checksign(sign(m, sk), m, pk(sk)) = ok().
+
+(* Asymmetric encryption *)
+fun aenc(bitstring, pkey):bitstring.
+reduc forall m:bitstring, sk:skey; adec(aenc(m, pk(sk)), sk) = m.
+
+(* Certificate *)
+fun cert(bitstring, pkey, skey):certype [private].
+reduc forall vid:bitstring, vpk:pkey, sk:skey; checkcert(cert(vid, vpk, sk), pk(sk)) = ok().
+reduc forall vid:bitstring, vpk:pkey, sk:skey; getpk(cert(vid, vpk, sk)) = vpk.
+reduc forall vid:bitstring, vpk:pkey, sk:skey; getid(cert(vid, vpk, sk)) = vid.
+
+(* Group signature *)
+					(* Group master secret key: gmsk *)
+fun gpk(gmskey):gpkey.			(* Group public key: gpk(gmsk) *)
+fun gsk(bitstring, gmskey):gskey.		(* Vehicle private group secret key: gsk(vid, gmsk) *)
+fun gok():result.
+
+(* Pseudonym certificate *)
+fun pseudocert(pkey, gskey):certype.
+reduc forall pseudopk:pkey, vid:bitstring, gmsk:gmskey; checkpseudocert(pseudocert(pseudopk, gsk(vid, gmsk)), gpk(gmsk)) = gok().
+reduc forall pseudopk:pkey, vid:bitstring, gmsk:gmskey; getpseudopk(pseudocert(pseudopk, gsk(vid, gmsk))) = pseudopk.
+reduc forall pseudopk:pkey, vid:bitstring, gmsk:gmskey; gopen(pseudocert(pseudopk, gsk(vid, gmsk)), gmsk) = vid.
+reduc forall pseudopk:pkey, vid:bitstring, gmsk:gmskey; getvid(pseudocert(pseudopk, gsk(vid, gmsk))) = vid [private].
+
+
+(* Events *)
+event VehicleCreated(bitstring).
+event AttackerGetsEnrollmentCertificate(bitstring, pkey).
+event ValidGroupPrivateKeyReceived(bitstring, gskey, gpkey).
+event ValidGroupPrivateKeySent(bitstring, gskey, gpkey).
+event ErrorMessageReceived(bitstring).
+
+event ValidGroupKeyRequestReceived(skey, bitstring, bitstring).
+event ValidGroupKeyRequestSent(bitstring, bitstring).
+event RevokedCannotGetGroupKey(bitstring).
+event ValidMessageSent(bitstring, certype, bitstring).
+event PseudoCertCreated(bitstring, skey).
+event ValidMessageReceived(bitstring, bitstring).
+event RevocationAsked(bitstring, certype, certype).
+event ValidRevocationReportReceived(certype, certype).
+event RevokedVid(bitstring).
+event AlreadyRevoked(bitstring).
+event ValidMessageReceivedSenderVid(bitstring, bitstring).
+event CASKReveal(skey).
+event CAGMSKReveal(gmskey).
+
+free myvid:bitstring [private].
+free revokedvid:bitstring [private].
+
+
+(* Queries *)
+(* Q1.3 - Sanity check: Vehicle/Attacker cannot get a valid group key when it is revoked - result: FALSE, TRUE *)
+(* query vid:bitstring; event(RevokedCannotGetGroupKey(vid)). *)
+(* query vid:bitstring; event(RevokedCannotGetGroupKey(vid)) ==> event(RevokedVid(vid)). *)
+
+
+
+(* Q1.6 - Sanity check: not event AlreadyRevoked - result: FALSE *)
+(* query vid:bitstring; event(AlreadyRevoked(vid)). *)
+
+(* Q1.7 - Sanity check: attacker can ask revocation of another vehicle - result: FALSE *)
+(* query torevokecert:certype, vcert:certype, vid:bitstring; event(ValidRevocationReportReceived(torevokecert, vcert)) ==> event(RevocationAsked(vid, vcert, torevokecert)). *)
+(* query torevokecert:certype, vcert:certype, vid:bitstring, attpk:pkey; 
+	event(ValidRevocationReportReceived(torevokecert, vcert)) ==> event(RevocationAsked(vid, vcert, torevokecert)) || event(AttackerGetsEnrollmentCertificate(vid, attpk)). *)
+
+(* Qx.x - Temporal constraint: revoked cannot get key and revoke event - result: cannot be proved *)
+(* query vid:bitstring, t1:time, t2:time; event(RevokedCannotGetGroupKey(vid))@t2 && event(RevokedVid(vid))@t1 ==> t1 < t2. *)
+
+(* Qx.2 - Temporal constraint: cannot receive a valid message from a vehicle that has been removed *)
+(* query sendervid:bitstring, vpseudocert:certype, receivervid:bitstring, m:bitstring, t1:time, t2:time, t3:time; 
+	event(ValidMessageSent(sendervid, vpseudocert, m))@t1 && event(ValidMessageReceived(receivervid, m))@t2 && event(RevokedVid(sendervid))@t3 ==> t1 < t2 && t2 < t3. *)
+(* ATTACK FOUND attacker sends -> (m, sign(m, oldsk), pseudocert(pk(oldsk), sign using new gsk) *)
+
+(* Qx.3 - FALSE *)
+(* query sendervid:bitstring, t1:time, t2:time; event(ValidMessageReceivedSenderVid(sendervid))@t1 && event(RevokedVid(sendervid))@t2 ==> t1 < t2. *)
+
+	
+
+
+
+
+(* Queries *)
+(* Q1 - Secrecy of the vehicle ID *)
+	(* Q1.1 - Reachability *)
+	query attacker(myvid).
+	(* Q1.2 - Weak secrecy - Offline attacks *)
+	weaksecret myvid.
+	(* Q1.2 - Strong secrecy - Observational equivalence *)
+	noninterf myvid.
+
+(* Q2 - Sanity Checks *)
+	(* Q2.1.1 - Vehicle created - result: not event FALSE *)
+	query event(VehicleCreated(myvid)).
+
+	(* Q2.1.2 - Vehicle can get a valid group key - result: not event FALSE *)
+	query vgsk:gskey, vgpk:gpkey; event(ValidGroupPrivateKeyReceived(myvid, vgsk, vgpk)).
+	(* Q2.1.3 - Other vehicle can get a valid group key - result: not event FALSE *)
+	query ovid:bitstring, vgsk:gskey, vgpk:gpkey; event(ValidGroupPrivateKeyReceived(ovid, vgsk, vgpk)).
+	(* Q2.1.4 - Attacker can get a valid group key - result: not event FALSE *)
+	query attvid:bitstring, attpk:pkey, vgsk:gskey, vgpk:gpkey; 
+		event(ValidGroupPrivateKeySent(attvid, vgsk, vgpk)) &&  event(AttackerGetsEnrollmentCertificate(attvid, attpk)).
+	(* Q2.1.5 - Revoked vehicle cannot get a valid group key - result: not event TRUE *)
+	query vgsk:gskey, vgpk:gpkey; event(ValidGroupPrivateKeyReceived(revokedvid, vgsk, vgpk)).
+	(* Q2.1.6 - Revoked vehicle receives an error message from the RSU - result: not event FALSE *)
+	query event(ErrorMessageReceived(revokedvid)).
+
+	(* Q2.2.1 - Vehicle sends a message - result: not event FALSE *)
+	query vpseudocert:certype, m:bitstring; event(ValidMessageSent(myvid, vpseudocert, m)).
+	(* Q2.2.2 - Vehicle sends two messages with the same pseudonym - result: not event FALSE *)
+	query vpseudocert:certype, m1:bitstring, m2:bitstring; 
+		event(ValidMessageSent(myvid, vpseudocert, m1)) && event(ValidMessageSent(myvid, vpseudocert, m2)).
+	(* Q2.2.3 - Vehicle sends two messages with different pseudonyms - result: not event FALSE *)
+	query vpseudocert1:certype, vpseudocert2:certype, m1:bitstring, m2:bitstring;
+		event(ValidMessageSent(myvid, vpseudocert1, m1)) && event(ValidMessageSent(myvid, vpseudocert2, m2)).
+	(* Q2.2.4 - Other vehicle sends a message - result: not event FALSE *)
+	query ovid:bitstring, vpseudocert:certype, m:bitstring; event(ValidMessageSent(ovid, vpseudocert, m)).
+	(* Q2.2.5 - Attacker sends a message - result: not event FALSE *)
+	query attvid:bitstring, attpk:pkey, m:bitstring; 
+		event(ValidMessageReceivedSenderVid(attvid, m)) &&  event(AttackerGetsEnrollmentCertificate(attvid, attpk)).
+	(* Q2.2.6 - Revoked vehicle cannot send a message - result: not event TRUE *)
+	query vpseudocert:certype, m:bitstring; event(ValidMessageSent(revokedvid, vpseudocert, m)).
+
+(* Q3 - Authentication *)
+	(* Q3.1.1 - Authentication of the vehicle to the RSU in Group Key request - result: TRUE *)
+	query vid:bitstring, vgsk:gskey, vgpk:gpkey, attpk:pkey, nonce:bitstring;
+		event(ValidGroupPrivateKeySent(vid, vgsk, vgpk)) ==> event(ValidGroupKeyRequestSent(vid, nonce)) 
+								|| event(AttackerGetsEnrollmentCertificate(vid, attpk)).
+	(* Q3.1.2 - Authentication of the vehicle to the RSU in Group Key request - result: TRUE *)
+	query rsusk:skey, vid:bitstring, attpk:pkey, nonce:bitstring; 
+		event(ValidGroupKeyRequestReceived(rsusk, vid, nonce)) ==> event(ValidGroupKeyRequestSent(vid, nonce)) 
+								|| event(AttackerGetsEnrollmentCertificate(vid, attpk)).
+	(* Q3.2 - Authentication of the vehicle when sending a message - result: TRUE *)
+	query sendervid:bitstring, vpseudocert:certype, receivervid:bitstring, m:bitstring, attpk:pkey;
+		event(ValidMessageReceived(receivervid, m)) ==> event(ValidMessageSent(sendervid, vpseudocert, m)) 
+								|| event(AttackerGetsEnrollmentCertificate(sendervid, attpk)).
+	(* Q3.3 - Authentication of the RSU to the vehicle in Group Key request - result: TRUE *)
+	query vid:bitstring, vgsk:gskey, vgpk:gpkey, rsusk:skey; 
+		event(ValidGroupPrivateKeyReceived(vid, vgsk, vgpk)) ==> event(ValidGroupPrivateKeySent(vid, vgsk, vgpk)) 
+								|| attacker(new rsusk).
+	(* Q3.4 - Authentication of the RSU to the vehicle in the error message response - result: TRUE *)
+	query vid:bitstring; event(ErrorMessageReceived(vid)) ==> event(RevokedCannotGetGroupKey(vid)).
+
+
+
+
+let VehicleSendMessages(vid:bitstring, vgsk:gskey) = 
+	(* Create the pseudonym certificate *)
+	new vpseudosk:skey;
+	let vpseudopk = pk(vpseudosk) in
+	let vpseudocert = pseudocert(vpseudopk, vgsk) in
+	event PseudoCertCreated(vid, vpseudosk);
+	
+	(* Vehicle can send multiple messages with the same pseudocert *)
+	!(	(* Broadcast message to send *)
+		new m:bitstring;
+		(* Sign the message *)
+		let signm = sign(m, vpseudosk) in
+		event ValidMessageSent(vid, vpseudocert, m);
+		out(ch, (m, signm, vpseudocert))
+	).
+
+
+let VehicleReceiveMessage(vid:bitstring, vgpk:gpkey) = 
+	in(ch, (m:bitstring, signm:bitstring, vpseudocert:certype));
+	(* Check pseudonym certificate*)
+	if checkpseudocert(vpseudocert, vgpk) = gok() then
+	(* Check message signature *)
+	let vpseudopk = getpseudopk(vpseudocert) in
+	if checksign(signm, m, vpseudopk) = ok() then
+	
+	(* Correct message *)
+	event ValidMessageReceived(vid, m);
+	event ValidMessageReceivedSenderVid(getvid(vpseudocert), m).
+	
+
+let VehicleRequestGroupKey(vid:bitstring, vsk:skey, vcert:certype, capk:pkey) =
+	(* Vehicle gets the rsu cert from broadcast message *)
+	in(ch, rsucert:certype);
+	if getid(rsucert) = rsu then
+	if checkcert(rsucert, capk) = ok() then
+	let rsupk = getpk(rsucert) in
+
+	(* Request group private and public key *)
+	new nonce:bitstring;
+	let req = (groupkey_request, nonce) in
+	let signreq = sign(req, vsk) in
+	let encsignreq = aenc((req, signreq, vcert), rsupk) in
+	
+	event ValidGroupKeyRequestSent(vid, nonce); 
+	out(ch, encsignreq);
+
+	(* Vehicle receives valid keys from the RSU *)
+	(
+		in(ch, encsignresp:bitstring);
+	
+		(* Decrypt the response *)
+		let (resp:bitstring, signature:bitstring) = adec(encsignresp, vsk) in
+
+		(* Check signature *)
+		if checksign(signature, resp, rsupk) = ok() then
+		(* Check vid in the response *)
+		let (=groupkey_response, =vid, vgsk:gskey, vgpk:gpkey, =nonce) = resp in
+	
+		event ValidGroupPrivateKeyReceived(vid, vgsk, vgpk);
+
+		( !VehicleSendMessages(vid, vgsk) | !VehicleReceiveMessage(vid, vgpk) )
+	)
+	(* Vehicle receives an error message from the RSU *)
+	|(
+		in(ch, encresp:bitstring);
+		
+		(* Decrypt the response *)
+		let (=vid, =nonce, =err_gkreq) = adec(encresp, vsk) in
+		event ErrorMessageReceived(vid)
+	)
+.
+	
+
+		
+let RSUReleaseGroupKey(gmsk:gmskey, rsusk: skey, rsucert:certype, capk:pkey) = 
+	in(ch, encsignreq:bitstring);
+	(* Decrypt the request *)
+	let (req:bitstring, signreq:bitstring, vcert:certype) = adec(encsignreq, rsusk) in
+	
+	let (=groupkey_request, nonce:bitstring) = req in
+	(* Check vehicle enrollment certificate *)
+	if checkcert(vcert, capk) = ok() then
+
+	let vpk = getpk(vcert) in
+	let vid = getid(vcert) in
+	(* Check if the vehicle is revoked *)
+	if vid = revokedvid then(
+		event RevokedCannotGetGroupKey(vid); 
+		out(ch, aenc((vid, nonce, err_gkreq), vpk));
+		0
+	)else
+	(* Check signature on request *)
+	if checksign(signreq, req, vpk) = ok() then
+
+	event ValidGroupKeyRequestReceived(rsusk, vid, nonce);
+	
+	(* Create new group private secret key *)
+	let vgsk = gsk(vid, gmsk) in
+	let resp = (groupkey_response, vid, vgsk, gpk(gmsk), nonce) in
+	let signresp = sign(resp, rsusk) in
+	let encsignresp = aenc((resp, signresp), vpk) in
+	
+	event ValidGroupPrivateKeySent(vid, vgsk, gpk(gmsk));
+	out(ch, encsignresp).
+	
+
+
+
+process  
+	(* Create CA public key and private key *)
+	new cask:skey;
+	let capk = pk(cask) in
+	out(ch, capk);
+	(* Create RSU group master secret key, public key and private key, certificate *)
+	new gmsk:gmskey; new rsusk:skey;
+	let rsupk = pk(rsusk) in
+	let rsucert = cert(rsu, rsupk, cask) in
+	out(ch, (rsupk, rsucert));
+	
+	(* Create "our" vehicle *)
+	(	(* My enrollment certificate *)
+		new vsk:skey; 
+		let vpk = pk(vsk) in
+		let vcert = cert(myvid, vpk, cask) in
+		event VehicleCreated(myvid);
+		VehicleRequestGroupKey(myvid, vsk, vcert, capk)
+	)
+	(* Create revoked vehicle *)
+	|(
+		new revokedsk:skey; 
+		let revokedpk = pk(revokedsk) in
+		let revokedcert = cert(revokedvid, revokedpk, cask) in
+		event RevokedVid(revokedvid);
+		VehicleRequestGroupKey(revokedvid, revokedsk, revokedcert, capk)
+	)
+	(* Create other vehicles *)
+	|!(	(* Other vehicle enrollment certificate *)
+		new ovid:bitstring;
+		new ovsk:skey; 
+		let ovpk = pk(ovsk) in
+		let ovcert = cert(ovid, ovpk, cask) in
+		event VehicleCreated(ovid);
+		VehicleRequestGroupKey(ovid, ovsk, ovcert, capk)
+	)
+	(* Create attackers *)
+	|!(	(* Attacker enrollment certificate *)
+		new attvid:bitstring;
+		new attsk:skey;
+		let attpk = pk(attsk) in
+		let attcert = cert(attvid, attpk, cask) in
+		event VehicleCreated(attvid);
+		event AttackerGetsEnrollmentCertificate(attvid, attpk);
+		out(ch, (attvid, attsk, attcert))
+	)	
+	| !RSUReleaseGroupKey(gmsk, rsusk, rsucert, capk)
+

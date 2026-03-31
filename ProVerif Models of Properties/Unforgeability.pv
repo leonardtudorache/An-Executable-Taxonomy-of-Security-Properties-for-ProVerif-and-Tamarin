@@ -1,0 +1,38 @@
+free c: channel.
+
+type skey.
+type pkey.
+type boolean.
+
+fun pk(skey): pkey.
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
+
+event signed_by(skey, bitstring).
+event valid_signature(bitstring, pkey).
+event check().
+
+query m: bitstring, sk: skey; event(valid_signature(m, pk(sk))) ==> event(signed_by(sk, m)).
+query event(check()).
+
+free skA: skey [private].
+
+let processA() =
+  new m1: bitstring;
+  let s1 = sign(m1, skA) in
+  event signed_by(skA, m1);
+  out(c, s1).
+
+let processB(pkA: pkey) =
+  new m2: bitstring;
+  in(c, signed_message: bitstring);
+  let m = checksign(signed_message, pkA) in
+
+  event valid_signature(m, pkA);
+  event check();
+  0.
+
+process
+  let pkA = pk(skA) in
+  out(c, pkA);
+  (!processA() | !processB(pkA))

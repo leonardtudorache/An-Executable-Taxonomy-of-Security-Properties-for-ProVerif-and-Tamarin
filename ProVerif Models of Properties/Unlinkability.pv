@@ -1,0 +1,14 @@
+free c : channel.
+type uid. type nonce.
+fun pid(uid, nonce): bitstring.
+
+free U, V : uid [private].
+
+let session(u: uid) =
+  new r: nonce;
+  (* out(c, u). *)
+  out(c, pid(u, r)).
+
+(* Biprocess: left = both sessions use U; right = second uses V *)
+process
+  ( session(U) | session(choice[U, V]) )

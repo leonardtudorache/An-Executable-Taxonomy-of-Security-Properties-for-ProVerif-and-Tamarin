@@ -1,0 +1,115 @@
+theory Generated
+begin
+
+builtins: revealing-signing, diffie-hellman, asymmetric-encryption, symmetric-encryption
+
+functions: group2key/1
+
+rule Register_P:
+  [
+    Fr(~sk)
+  ]
+  --[  ]->
+  [
+    !Ltk($P, ~sk),
+    !Pk($P, pk(~sk)),
+    Out(pk(~sk))
+  ]
+
+rule Register_Q:
+  [
+    Fr(~sk)
+  ]
+  --[  ]->
+  [
+    !Ltk($Q, ~sk),
+    !Pk($Q, pk(~sk)),
+    Out(pk(~sk))
+  ]
+
+
+rule P_start:
+  [
+    !Ltk($P, ~sk),
+    Fr(~a)
+  ]
+  --[ Begin_P() ]->
+  [
+    Out(revealSign('g'^~a, ~sk)),
+    State_P_1(~sk, ~a)
+  ]
+
+rule P_responds_to_step2:
+  let
+    msg_tuple = getMessage(step2_p0)
+    g_b = msg_tuple
+    k = group2key(g_b^~a)
+  in
+  [
+    !Ltk($P, ~sk),
+    State_P_1(~sk, ~a),
+    !Pk($Q, pk_q),
+    In(step2_p0),
+    Fr(~m)
+  ]
+  --[ Eq(revealVerify(step2_p0, msg_tuple, pk_q), true), Secret(~m), Honest($P), Honest($Q), Neq(g_b, 'g'), Commit_P($P) ]->
+  [
+    Out(senc(~m, k))
+  ]
+
+rule Q_responds_to_step1:
+  let
+    msg_tuple = getMessage(step1_p0)
+    g_a = msg_tuple
+  in
+  [
+    !Ltk($Q, ~sk),
+    !Pk($P, pk_p),
+    Fr(~b),
+    In(step1_p0)
+  ]
+  --[ Eq(revealVerify(step1_p0, msg_tuple, pk_p), true) ]->
+  [
+    Out(revealSign('g'^~b, ~sk)),
+    State_Q_1(~sk, g_a, ~b)
+  ]
+
+rule Q_responds_to_step3:
+  let
+    k = group2key(g_a^~b)
+    msg = sdec(step3_p0, k)
+  in
+  [
+    !Ltk($Q, ~sk),
+    State_Q_1(~sk, g_a, ~b),
+    In(step3_p0)
+  ]
+  --[ Commit_Q($Q) ]->
+  [
+  ]
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @i ==> x = y"
+
+restriction Inequality:
+  "All x #i. Neq(x,x) @i ==> F"
+
+rule Reveal_P_sk:
+  [ !Ltk($P, ~sk) ]
+  --[ Reveal($P) ]->
+  [ Out(~sk) ]
+
+rule Reveal_Q_sk:
+  [ !Ltk($Q, ~sk) ]
+  --[ Reveal($Q) ]->
+  [ Out(~sk) ]
+
+lemma forward_secrecy:
+  "All m #i.
+    Secret(m) @i
+    ==>
+    not (Ex #j. K(m) @j)
+    |
+    (Ex B #r. Reveal(B) @r & Honest(B) @i & r < i)"
+
+end

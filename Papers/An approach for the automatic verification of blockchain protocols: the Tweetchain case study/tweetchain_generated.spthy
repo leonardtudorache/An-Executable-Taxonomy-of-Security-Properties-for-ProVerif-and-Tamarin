@@ -1,0 +1,331 @@
+theory TC_v022
+begin
+
+functions: pk/1, sk/1, aenc/2, adec/2
+
+builtins: hashing
+
+equations:
+    adec(aenc(x.1, sk(x.2)), pk(x.2)) = x.1,
+    adec(aenc(x.1, pk(x.2)), sk(x.2)) = x.1
+
+rule Asymmetric_key_setup:
+    [ Fr(~f) ] --> [ !Sk($A, sk(~f)), !Pk($A, pk(~f)) ]
+
+rule Publish_public_keys:
+    [ !Pk(A, pkA) ] --> [ Out(pkA) ]
+
+rule Init_Knowledge:
+        [ !Pk($W, pk(k_W)),
+          !Pk($r, pk(k_r)),
+          !Pk($x, pk(k_x)),
+          !Pk($y, pk(k_y)),
+          !Sk($W, sk(k_W)),
+          !Sk($r, sk(k_r)),
+          !Sk($x, sk(k_x)),
+          !Sk($y, sk(k_y)),
+          Fr(~root_HC_W),
+          Fr(~root_HC_r),
+          Fr(~root_HC_x),
+          Fr(~root_HC_y)
+        ]
+        --[  ]->
+        [ St_init_x($W, $r, ~root_HC_x, $x, $y, sk(k_x), pk(k_W), pk(k_r), 
+          pk(k_x), pk(k_y), h(~root_HC_W)),
+          St_init_W($W, $r, ~root_HC_W, $x, $y, sk(k_W), pk(k_W), pk(k_r), 
+          pk(k_x), pk(k_y)),
+          St_init_y($W, $r, ~root_HC_y, $x, $y, sk(k_y), pk(k_W), pk(k_r), 
+          pk(k_x), pk(k_y), h(~root_HC_W)),
+          St_init_r($W, $r, ~root_HC_r, $x, $y, sk(k_r), pk(k_W), pk(k_r), 
+          pk(k_x), pk(k_y), h(~root_HC_W))
+        ]
+
+// ROLE x
+rule hel_twe_x:
+        [ St_init_x(W, r, root_HC_x, x, y, sk(k_x), pk(k_W), pk(k_r), pk(k_x), 
+          pk(k_y), alpha),
+          Fr(~TID_1_x)
+        ]
+        --[  ]->
+        [ Out(<x, h(root_HC_x), alpha, 'Hello', W, ~TID_1_x, aenc{<x, h(
+          root_HC_x), alpha, 'Hello', W, ~TID_1_x>}sk(k_x)>),
+          St_hel_twe_x(~TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), alpha)
+        ]
+
+rule welc_twe_x:
+    let
+        epsilon = aenc{<W, h(alpha), 'Welcome', h(root_HC_x), TID_1_x, x>}
+        sk(k_W)
+    in
+        [ St_hel_twe_x(TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), pk(k_r)
+          , pk(k_x), pk(k_y), alpha),
+          In(<W, h(alpha), 'Welcome', h(root_HC_x), TID_1_x, x, epsilon>)
+        ]
+        --[  ]->
+        [ St_welc_twe_x(TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), epsilon, alpha)
+        ]
+
+rule HC_1_x_Out_x:
+        [ St_welc_twe_x(TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), epsilon, alpha)
+        ]
+        --[  ]->
+        [ Out(<x, h(root_HC_x), TID_1_x, aenc{<x, h(root_HC_x), TID_1_x>}sk(k_x)
+          >),
+          St_HC_1_x_Out_x(TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), epsilon, alpha)
+        ]
+
+rule foll_req_x:
+        [ St_HC_1_x_Out_x(TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), epsilon, alpha)
+        ]
+        --[  ]->
+        [ Out(<x, y, aenc{<'follow_please', TID_1_x>}pk(k_y), aenc{<x, y, aenc{<
+          'follow_please', TID_1_x>}pk(k_y)>}sk(k_x)>),
+          St_foll_req_x(TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), epsilon, alpha)
+        ]
+
+rule req_acc_x:
+    let
+        epsilon = aenc{<W, h(alpha), 'Welcome', h(root_HC_x), TID_1_x, x>}
+        sk(k_W)
+        eta = aenc{<y, zeta, 'Follow_Welcome', h(root_HC_x), TID_1_x, x>}sk(k_y)
+    in
+        [ St_foll_req_x(TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), epsilon, alpha),
+          In(<y, zeta, 'Follow_Welcome', h(root_HC_x), TID_1_x, x, eta>)
+        ]
+        --[  ]->
+        [ St_req_acc_x(TID_1_x, W, r, root_HC_x, x, y, sk(k_x), pk(k_W), pk(k_r)
+          , pk(k_x), pk(k_y), epsilon, eta, alpha, zeta)
+        ]
+
+// ROLE W
+rule hel_twe_W:
+    let
+        delta = aenc{<x, alpha, h(root_HC_W), 'Hello', W, TID_1_x>}sk(k_x)
+    in
+        [ St_init_W(W, r, root_HC_W, x, y, sk(k_W), pk(k_W), pk(k_r), pk(k_x), 
+          pk(k_y)),
+          In(<x, alpha, h(root_HC_W), 'Hello', W, TID_1_x, delta>)
+        ]
+        --[  ]->
+        [ St_hel_twe_W(TID_1_x, W, r, root_HC_W, x, y, sk(k_W), pk(k_W), pk(k_r)
+          , pk(k_x), pk(k_y), delta, alpha)
+        ]
+
+rule welc_twe_W:
+        [ St_hel_twe_W(TID_1_x, W, r, root_HC_W, x, y, sk(k_W), pk(k_W), pk(k_r)
+          , pk(k_x), pk(k_y), delta, alpha)
+        ]
+        --[  ]->
+        [ Out(<W, h(h(root_HC_W)), 'Welcome', alpha, TID_1_x, x, aenc{<W, h(h(
+          root_HC_W)), 'Welcome', alpha, TID_1_x, x>}sk(k_W)>),
+          St_welc_twe_W(TID_1_x, W, r, root_HC_W, x, y, sk(k_W), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), delta, alpha)
+        ]
+
+rule HC_2_W_Out_W:
+        [ St_welc_twe_W(TID_1_x, W, r, root_HC_W, x, y, sk(k_W), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), delta, alpha)
+        ]
+        --[  ]->
+        [ Out(<W, h(h(root_HC_W)), aenc{<W, h(h(root_HC_W))>}sk(k_W)>),
+          St_HC_2_W_Out_W(TID_1_x, W, r, root_HC_W, x, y, sk(k_W), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), delta, alpha)
+        ]
+
+rule hel_twe2_W:
+    let
+        delta = aenc{<x, alpha, h(root_HC_W), 'Hello', W, TID_1_x>}sk(k_x)
+        eta = aenc{<y, epsilon, h(h(root_HC_W)), 'Hello', W, TID_1_y>}sk(k_y)
+    in
+        [ St_HC_2_W_Out_W(TID_1_x, W, r, root_HC_W, x, y, sk(k_W), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), delta, alpha),
+          In(<y, epsilon, h(h(root_HC_W)), 'Hello', W, TID_1_y, eta>)
+        ]
+        --[  ]->
+        [ St_hel_twe2_W(TID_1_x, TID_1_y, W, r, root_HC_W, x, y, sk(k_W), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), delta, eta, alpha, epsilon)
+        ]
+
+rule welc_twe2_W:
+        [ St_hel_twe2_W(TID_1_x, TID_1_y, W, r, root_HC_W, x, y, sk(k_W), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), delta, eta, alpha, epsilon)
+        ]
+        --[  ]->
+        [ Out(<W, h(h(h(root_HC_W))), 'Welcome', epsilon, TID_1_y, y, aenc{<W, h
+          (h(h(root_HC_W))), 'Welcome', epsilon, TID_1_y, y>}sk(k_W)>),
+          St_welc_twe2_W(TID_1_x, TID_1_y, W, r, root_HC_W, x, y, sk(k_W), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), delta, eta, alpha, epsilon)
+        ]
+
+rule HC_3_W_Out2_W:
+        [ St_welc_twe2_W(TID_1_x, TID_1_y, W, r, root_HC_W, x, y, sk(k_W), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), delta, eta, alpha, epsilon)
+        ]
+        --[  ]->
+        [ Out(<W, h(h(h(root_HC_W))), aenc{<W, h(h(h(root_HC_W)))>}sk(k_W)>),
+          St_HC_3_W_Out2_W(TID_1_x, TID_1_y, W, r, root_HC_W, x, y, sk(k_W), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), delta, eta, alpha, epsilon)
+        ]
+
+rule hel_twe3_W:
+    let
+        delta = aenc{<x, alpha, h(root_HC_W), 'Hello', W, TID_1_x>}sk(k_x)
+        eta = aenc{<y, epsilon, h(h(root_HC_W)), 'Hello', W, TID_1_y>}sk(k_y)
+        kappa = aenc{<r, theta, h(h(h(root_HC_W))), 'Hello', W, TID_1_r>}sk(k_r)
+    in
+        [ St_HC_3_W_Out2_W(TID_1_x, TID_1_y, W, r, root_HC_W, x, y, sk(k_W), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), delta, eta, alpha, epsilon),
+          In(<r, theta, h(h(h(root_HC_W))), 'Hello', W, TID_1_r, kappa>)
+        ]
+        --[  ]->
+        [ St_hel_twe3_W(TID_1_r, TID_1_x, TID_1_y, W, r, root_HC_W, x, y, 
+          sk(k_W), pk(k_W), pk(k_r), pk(k_x), pk(k_y), kappa, delta, eta, theta,
+          alpha, epsilon)
+        ]
+
+rule welc_twe3_W:
+        [ St_hel_twe3_W(TID_1_r, TID_1_x, TID_1_y, W, r, root_HC_W, x, y, 
+          sk(k_W), pk(k_W), pk(k_r), pk(k_x), pk(k_y), kappa, delta, eta, theta,
+          alpha, epsilon)
+        ]
+        --[  ]->
+        [ Out(<W, h(h(h(h(root_HC_W)))), 'Welcome', theta, TID_1_r, r, aenc{<W, 
+          h(h(h(h(root_HC_W)))), 'Welcome', theta, TID_1_r, r>}sk(k_W)>),
+          St_welc_twe3_W(TID_1_r, TID_1_x, TID_1_y, W, r, root_HC_W, x, y, 
+          sk(k_W), pk(k_W), pk(k_r), pk(k_x), pk(k_y), kappa, delta, eta, theta,
+          alpha, epsilon)
+        ]
+
+// ROLE y
+rule HC_2_W_Out_y:
+    let
+        delta = aenc{<W, h(alpha)>}sk(k_W)
+    in
+        [ St_init_y(W, r, root_HC_y, x, y, sk(k_y), pk(k_W), pk(k_r), pk(k_x), 
+          pk(k_y), alpha),
+          In(<W, h(alpha), delta>)
+        ]
+        --[  ]->
+        [ St_HC_2_W_Out_y(W, r, root_HC_y, x, y, sk(k_y), pk(k_W), pk(k_r), 
+          pk(k_x), pk(k_y), delta, alpha)
+        ]
+
+rule hel_twe2_y:
+        [ St_HC_2_W_Out_y(W, r, root_HC_y, x, y, sk(k_y), pk(k_W), pk(k_r), 
+          pk(k_x), pk(k_y), delta, alpha),
+          Fr(~TID_1_y)
+        ]
+        --[  ]->
+        [ Out(<y, h(root_HC_y), h(alpha), 'Hello', W, ~TID_1_y, aenc{<y, h(
+          root_HC_y), h(alpha), 'Hello', W, ~TID_1_y>}sk(k_y)>),
+          St_hel_twe2_y(~TID_1_y, W, r, root_HC_y, x, y, sk(k_y), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), delta, alpha)
+        ]
+
+rule welc_twe2_y:
+    let
+        delta = aenc{<W, h(alpha)>}sk(k_W)
+        eta = aenc{<W, h(h(alpha)), 'Welcome', h(root_HC_y), TID_1_y, y>}sk(k_W)
+    in
+        [ St_hel_twe2_y(TID_1_y, W, r, root_HC_y, x, y, sk(k_y), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), delta, alpha),
+          In(<W, h(h(alpha)), 'Welcome', h(root_HC_y), TID_1_y, y, eta>)
+        ]
+        --[  ]->
+        [ St_welc_twe2_y(TID_1_y, W, r, root_HC_y, x, y, sk(k_y), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), eta, delta, alpha)
+        ]
+
+rule HC_1_x_Out_y:
+    let
+        delta = aenc{<W, h(alpha)>}sk(k_W)
+        eta = aenc{<W, h(h(alpha)), 'Welcome', h(root_HC_y), TID_1_y, y>}sk(k_W)
+        iota = aenc{<x, theta, TID_1_x>}sk(k_x)
+    in
+        [ St_welc_twe2_y(TID_1_y, W, r, root_HC_y, x, y, sk(k_y), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), eta, delta, alpha),
+          In(<x, theta, TID_1_x, iota>)
+        ]
+        --[  ]->
+        [ St_HC_1_x_Out_y(TID_1_x, TID_1_y, W, r, root_HC_y, x, y, sk(k_y), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), eta, delta, iota, alpha, theta)
+        ]
+
+rule foll_req_y:
+    let
+        delta = aenc{<W, h(alpha)>}sk(k_W)
+        eta = aenc{<W, h(h(alpha)), 'Welcome', h(root_HC_y), TID_1_y, y>}sk(k_W)
+        iota = aenc{<x, theta, TID_1_x>}sk(k_x)
+        kappa = aenc{<x, y, aenc{<'follow_please', TID_1_x>}pk(k_y)>}sk(k_x)
+    in
+        [ St_HC_1_x_Out_y(TID_1_x, TID_1_y, W, r, root_HC_y, x, y, sk(k_y), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), eta, delta, iota, alpha, theta),
+          In(<x, y, aenc{<'follow_please', TID_1_x>}pk(k_y), kappa>)
+        ]
+        --[  ]->
+        [ St_foll_req_y(TID_1_x, TID_1_y, W, r, root_HC_y, x, y, sk(k_y), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), eta, delta, kappa, iota, alpha, 
+          theta)
+        ]
+
+rule req_acc_y:
+        [ St_foll_req_y(TID_1_x, TID_1_y, W, r, root_HC_y, x, y, sk(k_y), 
+          pk(k_W), pk(k_r), pk(k_x), pk(k_y), eta, delta, kappa, iota, alpha, 
+          theta)
+        ]
+        --[  ]->
+        [ Out(<y, h(h(root_HC_y)), 'Follow_Welcome', theta, TID_1_x, x, aenc{<y,
+          h(h(root_HC_y)), 'Follow_Welcome', theta, TID_1_x, x>}sk(k_y)>),
+          St_req_acc_y(TID_1_x, TID_1_y, W, r, root_HC_y, x, y, sk(k_y), pk(k_W)
+          , pk(k_r), pk(k_x), pk(k_y), eta, delta, kappa, iota, alpha, theta)
+        ]
+
+// ROLE r
+rule HC_3_W_Out2_r:
+    let
+        delta = aenc{<W, h(h(alpha))>}sk(k_W)
+    in
+        [ St_init_r(W, r, root_HC_r, x, y, sk(k_r), pk(k_W), pk(k_r), pk(k_x), 
+          pk(k_y), alpha),
+          In(<W, h(h(alpha)), delta>)
+        ]
+        --[  ]->
+        [ St_HC_3_W_Out2_r(W, r, root_HC_r, x, y, sk(k_r), pk(k_W), pk(k_r), 
+          pk(k_x), pk(k_y), delta, alpha)
+        ]
+
+rule hel_twe3_r:
+        [ St_HC_3_W_Out2_r(W, r, root_HC_r, x, y, sk(k_r), pk(k_W), pk(k_r), 
+          pk(k_x), pk(k_y), delta, alpha),
+          Fr(~TID_1_r)
+        ]
+        --[  ]->
+        [ Out(<r, h(root_HC_r), h(h(alpha)), 'Hello', W, ~TID_1_r, aenc{<r, h(
+          root_HC_r), h(h(alpha)), 'Hello', W, ~TID_1_r>}sk(k_r)>),
+          St_hel_twe3_r(~TID_1_r, W, r, root_HC_r, x, y, sk(k_r), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), delta, alpha)
+        ]
+
+rule welc_twe3_r:
+    let
+        delta = aenc{<W, h(h(alpha))>}sk(k_W)
+        eta = aenc{<W, h(h(h(alpha))), 'Welcome', h(root_HC_r), TID_1_r, r>}
+        sk(k_W)
+    in
+        [ St_hel_twe3_r(TID_1_r, W, r, root_HC_r, x, y, sk(k_r), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), delta, alpha),
+          In(<W, h(h(h(alpha))), 'Welcome', h(root_HC_r), TID_1_r, r, eta>)
+        ]
+        --[  ]->
+        [ St_welc_twe3_r(TID_1_r, W, r, root_HC_r, x, y, sk(k_r), pk(k_W), 
+          pk(k_r), pk(k_x), pk(k_y), eta, delta, alpha)
+        ]
+
+end

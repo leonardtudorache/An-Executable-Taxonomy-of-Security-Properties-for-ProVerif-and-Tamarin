@@ -1,0 +1,145 @@
+(* Medical IoT Security Protocol - ProVerif Model *)
+
+(* Channel Declaration *)
+free chi, ch2.
+
+(* Types of variable declaration *)
+type key[private], nonce, biometrics, user, sensor, medicalserver.
+
+(* Bitstring parameters for Cryptography Hash, and BioHash function are defined *)
+fun hash(bitstring), fun hashk(key), fun BH(bitstring), fun Gen(bitstring)
+fun Rep(bitstring,bitstring)
+
+(* Bitstring parameters for XOR operation are defined *)
+fun XOR(bitstring,bitstring), fun XORS(nonce,bitstring), fun
+XORX(bitstring,key), fun XORT(nonce,key), fun XORU(nonce,nonce),
+fun XORB(nonce,biometrics)
+reduc forall x:bitstring,y:bitstring;
+XORagn(XOR(x,y),y)=x.
+
+(* Bitstring parameters for concatenation operation *)
+fun concat(bitstring,bitstring), fun concats(bitstring,nonce).
+fun concatx(key,nonce).
+fun concatk(key,bitstring).
+fun concatn(nonce,nonce).
+reduc forall x:bitstring,y:bitstring;
+split(concat(x,y))=(x,y).
+
+(* Constant computed bitstring *)
+new Bioi,new Pwdi,new Mi,new beta,new Sidj,new Plj,new Sidi,new pidi,new
+alpha,new Uldi,new Aj,new Plj'
+
+(* Key *)
+new Skey, new MSkey, new SK,new Sjkey
+
+(* Nonce *)
+new Ri,new Rj,new R1,new R2,new R1',new R3'
+
+(* Entities: medicalserver, sensor, user *)
+new ms,new sj,new ui
+
+(* Definition of secret parameters of Ui,Sj,MS *)
+not attacker(new Skey).
+not attacker(new MSkey).
+not attacker(new Bioi).
+not attacker(new Pwdi).
+
+(* Event definition *)
+event SmartcardAccept(user).
+event MSAcceptS(sensor).
+event MSAcceptU(user).
+event sensorAccept(user,medicalserver).
+event userAccept(sensor,medicalserver).
+
+(* Query modelling *)
+query Ui:user,Sj:sensor,MS:medicalserver;
+    inj-event(userAccept(Sj,MS))⟹inj-event(sensorAccept(Ui,MS)).
+
+query Ui:user,Sj:sensor,MS:medicalserver;
+    inj-event(sensorAccept(Ui,MS))⟹inj-event(MSAcceptU(Ui)).
+
+query Ui:user,Sj:sensor,MS:medicalserver;
+    inj-event(MSAcceptU(Ui))⟹inj-event(MSAcceptS(Sj)).
+
+query Ui:user,Sj:sensor,MS:medicalserver;
+    inj-event(MSAcceptS(Sj))⟹inj-event(SmartcardAccept(Ui)).
+
+(* User process *)
+let
+processuser(Uidi:bitstring,Pwdi:bitstring,Bioi:bitstring,beta:bitstring,a
+lpha:bitstring,pidi:bitstring,SK:key,P3i:bitstring,Plj:bitstring,Sidj:bit
+string,Ri:nonce,R2:nonce,R3':nonce,ui:user,sj:sensor,ms:medicalserver)=
+let Betai=Rep(Bioi,alphai)in
+let Mi=hash(concat(beta,Pwdi))in
+let P8i=hash(concat(Pwdi,Mi))in
+if P8i=hash(concat(pidi,Mi)) then
+event SmartcardAccept(ui);
+let P6ij'=hash(XOR(Plj,P3i))in
+let P9ij=XORS(Ri,(hash(concat(Sidj,P6ij'))))in
+let P10ij=hash(concats(P6ij',Ri))in
+out(chi,(P6ij',P9ij,P10ij));
+in(chi,(P11ij:bitstring,P12ij:bitstring));
+let R2'=XOR(P11ij,hash(concat(Sidj,P6ij')))in
+if P12ij=hash(concats(concats(concatk(SK,P6ij'),R2),R1))then
+event userAccept(sj,ms);
+let SKi=hash(concats(concatn(R1,R2),R3')).
+
+(* Sensor process *)
+let
+processsensor(Plj:bitstring,P3i:bitstring,Sidj:bitstring,R1':nonce,R2:non
+ce,Sjkey:key,Aj:bitstring,MSkey:key,Rj:nonce,SK:key,ui:user,sj:sensor,ms:
+medicalserver)=
+in(ch2,(P6ij:bitstring,P9ij:bitstring,P10ij:bitstring));
+let P6ij'=hash(concat(P3i,Plj))in
+let R1=XOR(P9ij,hash(concat(Sidj,P6ij')))in
+let p2j=XOR(P61j,Aj)in
+let P2j'=XOR(hashk(Sjkey),p2j)in
+if P10ij=hash(concats(P6ij'',R1'))then
+event sensorAccept(ui,ms);
+out(chi,(P6ij'',P9ij,P2j'));
+in(ch2,(V1:bitstring));
+let P11ij=XORS(R2,hash(concat(Sidj,P6ij'')))in
+let R3'=XOR(V1,hash(concats(concatk(MSkey,Sidj),Rj)))in
+let SKj=hash(concat(concats(R1,R2),R3'))in
+let P12ij=hash(concat(concats(concatk(SK,P6ij),R2),R1))in
+out(ch2,(P11ij,P12ij)).
+
+(* Medical server registration *)
+let
+processMedicalServer(Sidj:bitstring,MSkey:key,Plj':bitstring,Rj:nonce,Ri:
+nonce,Sjkey:key,pidi:bitstring,Mi:bitstring,P4i:bitstring,ui:user,sj:sens
+or,ms:medicalserver)=
+in(ch2,(P9ij:bitstring,P6ij':bitstring,P2j':bitstring));
+let R1'=XOR(P9ij,hash(concat(Sidj,P6ij')))in
+let Acomp=XOR(P2j',R2')in
+let Aj'=XOR(Acomp,hashk(Sjkey))in
+let comp1=XOR(hashk(Sjkey),hash(concats(concatk(MSkey,Sidj),Rj)))in
+if comp1=XOR(Plj',hash(Sjkey))then
+event MSAcceptS(sj);
+if P4i=XOR(Mi,pidi)then
+event MSAcceptU(ui).
+
+(* Constant computed *)
+let BetaAlpha=Gen(Bioi)in
+let Mii=hash(concat(beta,Pwdi))in
+let P8i=hash(concat(pidi,Mi))in
+let S=XORX(Sidj,Sjkey)in
+out(chi,(S));
+let ppj=XOR(Plj,Aj)in
+let P2j=XOR(hashk(Sjkey),ppj)in
+in(ch2,(S1:bitstring));
+let SJKey=XOR(Sidi,S)in
+let P11j=hash(concats(concatk(MSkey,Sidi),Rj))in
+out(ch2,(Plj));
+in(chi,(pidi':bitstring,Mi':bitstring));
+let P3i=hash(concats(concatk(MSkey,pidi),Ri))in
+let P4i=XOR(Mi,pidi)in
+let P6ij=hash(concat(P3i,Plj))in
+(*let P=XOR(Plj,(hash(concats(concatk(MSkey,Sidi),Rj))))in*)
+(*let pj=XOR(P,(hash(concats(concatk(MSkey,Sidi),Rj))))in*)
+out(chi,(P6ij,P4i,P3i));
+((!processuser(Uidi,Pwdi,Bioi,beta,alpha,pidi,SK,P3i,Plj,Sidj,R1,R2,R3',
+ui,sj,ms))|
+(!processsensor(Plj,P3i,Sidj,R1',R2,Sjkey,Aj,MSkey,Rj,SK,ui,sj,ms))|
+(!processMedicalServer(Sidj,MSkey,Plj',Rj,Ri,Sjkey,pidi,Mi,P4i,ui,sj,ms)
+))

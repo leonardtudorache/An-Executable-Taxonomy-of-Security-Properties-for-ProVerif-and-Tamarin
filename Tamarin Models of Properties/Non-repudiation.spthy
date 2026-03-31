@@ -1,0 +1,50 @@
+theory AuctionNonRepudiation
+begin
+
+builtins: signing, hashing
+
+/* 1. Setup */
+rule Setup_Bidder:
+    [ Fr(~skB) ]
+  --[ OnlyOnce() ]->
+    [ !LtkB(~skB), !PkB(pk(~skB)), Out(pk(~skB)) ]
+
+/* 2. Bidder Role */
+rule Bidder_Send_Bid:
+    let 
+        bid_msg = <~price, ~id, ~n>
+        sig = sign(h(bid_msg), ~skB)
+    in
+    [ !LtkB(~skB), Fr(~price), Fr(~id), Fr(~n) ]
+  --[ Bid(~price, ~id) ]->
+    [ Out(<bid_msg, sig>) ]
+
+/* 3. Auctioneer Role */
+rule Auctioneer_Receive_And_Win:
+    let 
+        bid_msg = <p, id, n>
+    in
+    [ In(<bid_msg, sig>)   // Receive bid
+    , !PkB(pkB)            // Get public key
+    , Fr(~win_confirm)     // Generate the fresh confirmation value here!
+    ]
+  --[ Eq(verify(sig, h(bid_msg), pkB), true)
+    , Won(p, id) 
+    ]->
+    [ Out(~win_confirm) ]  // Now it is a bound variable
+
+/* --- Restrictions --- */
+
+restriction Equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+restriction OnlyOnce:
+    "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
+
+/* --- Security Lemma --- */
+
+lemma NonRepudiation:
+    all-traces
+    "All p id #i. Won(p, id) @ i ==> (Ex #j. Bid(p, id) @ j & #j < #i)"
+
+end

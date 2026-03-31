@@ -1,0 +1,130 @@
+(* --- 1. Types and Channels --- *)
+
+type key.        (* Symmetric keys k1, k2 *)
+type pkey.       (* Public key *)
+type skey.       (* Private key *)
+type rand_exp.   (* Random exponent x *)
+type challenge.  (* Challenge r *)
+type signature.  (* Signature s *)
+type ciphertext. (* Ciphertext c *)
+type dh_secret.  (* The algebraic result of DH exchange *)
+
+free c: channel. (* Public communication channel *)
+free m_0: bitstring [private].
+free sk_A: skey [private].
+free sk_B: skey [private].
+
+(* --- 2. Cryptographic Functions --- *)
+
+(* Public/Private Key pair *)
+fun pk(skey): pkey. 
+
+(* Key Derivation Functions (Modeling Hash(DH_result) -> k1 || k2) *)
+(* In symbolic modeling, we treat these as distinct extractors on the DH secret *)
+fun kdf1(dh_secret): key.
+fun kdf2(dh_secret): key.
+
+(* Keyed Hash Function KH_k2(m) = r *)
+fun KH(key, bitstring): challenge.
+
+(* Symmetric Encryption *)
+fun E(bitstring, key): ciphertext.
+reduc forall m:bitstring, k:key; D(E(m, k), k) = m.
+
+(* --- 3. The Algebraic Model (Signcryption Logic) --- *)
+
+(* A_keypart: Alice computes y_b^x mod p *)
+fun A_calc(rand_exp, pkey): dh_secret.
+
+
+(* Abstract function for signature generation: s = x / (r + x_a) mod q *)
+fun sign_func(rand_exp, challenge, skey): signature.
+
+(* THE CORE EQUATION:
+   If Bob receives the correct (r, s) from Alice, his calculation of the 
+   DH secret must match Alice's calculation.
+*)
+reduc forall x:rand_exp, r:challenge, sk_a:skey, sk_b:skey; 
+      B_calc(pk(sk_a), r, sk_b, sign_func(x, r, sk_a)) = A_calc(x, pk(sk_b)).
+
+(* Packet format: (c, r, s) *)
+fun packet(ciphertext, challenge, signature): bitstring [data].
+
+(* --- 4. Events and Queries --- *)
+event signed_by(skey, bitstring).
+event valid_signature(bitstring, pkey). (* Message m accepted as coming from pkey *)
+
+(* Sanity check *)
+event success().
+query event(success()).
+
+(* Confidentiality: Can the attacker get m_0? *)
+query attacker(m_0).
+
+(* Unforgeability *)
+query m: bitstring, sk: skey; event(valid_signature(m, pk(sk))) ==> event(signed_by(sk, m)).
+
+(* --- 5. Protocol Processes --- *)
+
+(* Alice: The Sender *)
+let Alice(skA: skey, pkB: pkey, m: bitstring) = 
+    (* 1. Generate random x *)
+    new x: rand_exp;
+    
+    (* 2. Calculate DH secret: y_b^x *)
+    let K = A_calc(x, pkB) in
+    
+    (* 3. Derive keys *)
+    let k1 = kdf1(K) in
+    let k2 = kdf2(K) in
+    
+    (* 4. Ciphertext & Challenge *)
+    let c_text = E(m, k1) in
+    let r = KH(k2, m) in
+    
+    (* 5. Signature s *)
+    let s = sign_func(x, r, skA) in
+    
+    (* 6. Send *)
+    event signed_by(skA, m);
+    out(c, packet(c_text, r, s)).
+
+(* Bob: The Receiver *)
+let Bob(skB: skey, pkA: pkey) = 
+    in(c, recv_packet: bitstring);
+    let packet(c_in, r_in, s_in) = recv_packet in
+    
+    (* 1. Reconstruct DH secret using Sender's public key *)
+    let K_prime = B_calc(pkA, r_in, skB, s_in) in
+    
+    (* 2. Derive keys *)
+    let k1_prime = kdf1(K_prime) in
+    let k2_prime = kdf2(K_prime) in
+    
+    (* 3. Decrypt *)
+    let m_prime = D(c_in, k1_prime) in
+    
+    (* 4. Verify tag *)
+    if KH(k2_prime, m_prime) = r_in then
+        event success();
+        event valid_signature(m_prime, pkA).
+
+(* --- 6. Main Process --- *)
+process 
+    (* Setup Keys *)
+    let pk_A = pk(sk_A) in
+    let pk_B = pk(sk_B) in
+    
+    (* Publish Public Keys *)
+    out(c, pk_A);
+    out(c, pk_B);
+    
+    (* The Secret Message *)    
+    (
+        (* Run Alice and Bob *)
+        (* Note: We only inject m_0 into Alice once to test specific secrecy, 
+           but allow Bob to run indefinitely *)
+        ( !Alice(sk_A, pk_B, m_0) ) | 
+        ( !Bob(sk_B, pk_A) )
+    )
+

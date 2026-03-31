@@ -1,0 +1,132 @@
+(* Definitions *)
+
+free ch:channel.
+free schl:channel[private].
+free sch2:channel[private].
+free Sku:bitstring[private].
+free SKs:bitstring[private].
+free x:bitstring[private].
+const n0: bitstring.
+const P: bitstring.
+free IDi:bitstring[private].
+free PWi:bitstring[private].
+free B2:bitstring[private].
+free SIDj:bitstring[private].
+fun h(bitstring):bitstring.
+fun xor(bitstring,bitstring):bitstring.
+fun con(bitstring,bitstring):bitstring.
+fun Mod(bitstring,bitstring):bitstring.
+fun mul(bitstring,bitstring):bitstring.
+equation forall m:bitstring,n:bitstring;
+xor(xor(m,n),n)=m.
+equation forall m:bitstring,n:bitstring;
+mul(mul(P,m),n)=mul(mul(P,n),m).
+event UserStart(bitstring).
+event UserAuth(bitstring).
+
+
+
+(* Three queries in verifying the protocol: *)
+query attacker(Sku).
+query attacker(SKs).
+query pid:bitstring; inj-event(UserAuth(pid)) ==> inj-event(UserStart(pid)).
+
+(* Verification summary:
+Query not attacker(Sku[]) is true.
+Query not attacker(SKs[]) is true.
+Query inj-event(UserAuth(pid)) ==> inj-event(UserStart(pid)) is true. *)
+
+
+let User = 
+  new r:bitstring;
+  let HPWi0 = Mod(n0,h((con(IDi,PWi)))) in
+  let A0 = xor(HPWi0,r) in
+  out(schl,(A0));
+  in(schl,(A1:bitstring,uPIDi:bitstring));
+  let B1 = xor(A0,A1) in
+  let A2 = Mod(n0,h(con(con(con(IDi,PWi),B1),B2))) in
+  let A1 = xor(B1,HPWi0) in
+
+    event UserStart(uPIDi);
+    let HPWi = Mod(n0,h((con(IDi,PWi)))) in
+    let B1 = xor(A1,HPWi) in
+    if A2 = Mod(n0,h(con(con(con(IDi,PWi),B1),B2))) then
+      new ru:bitstring;
+      new T1:bitstring;
+      let A3 = mul(P,ru) in
+      let D1 = xor(h(B1),A3) in
+      let D2 = xor(SIDj,h(con(uPIDi,A3))) in
+      let D3 = h(con(con(con(uPIDi,SIDj),A3),T1)) in
+      let M1 = (uPIDi,D1,D2,D3,T1) in
+      out(ch,M1);
+
+  in(ch,(uD1:bitstring,uD12:bitstring,uD13:bitstring));
+  let uB1 = xor(uD11,B1) in
+  let A3 = Mod(n0,h(con(con(con(IDi,PWi),uB1new),B2))) in
+  let A1 = xor(uB1new,A3) in
+  0.
+
+(* Process of GWN: *)
+let GWNReg1 =
+  in(schl,gA0:bitstring);
+  let gB1 = h(con(gPIDi,x)) in
+  let gA1 = xor(gB1,gA0) in
+  let GWNReg2 =
+    in(sch2,gsidj:bitstring);
+    let gxj = h(con(gsidj,x)) in
+    out(sch2,gxj).
+  let GWNAuth =
+    in(ch,(gPIDi:bitstring,gD1:bitstring,gD2:bitstring,gD3:bitstring,gT1:bitstring));
+    let gB1 = h(con(gPIDi,x)) in
+    let gA3 = xor(gD1,h(gB1)) in
+    let gSIDj = xor(gD2,h(con(gPIDi,gA3))) in
+    if gD3 = h(con(con(con(gPIDi,gSIDj),gA3),gT1)) then
+      event UserAuth(gPIDi);
+      new rg:bitstring;
+      new T2:bitstring;
+      let gxj = h(con(gSIDj,x)) in
+      let grg = h(con(con(gPIDi,SIDj),x)) in
+      let gD4 = xor(con(rg,gA3),h(con(gxj,gSIDj))) in
+      let gD5 = xor(con(gSIDj,gB1),h(con(gxj,rg))) in
+      let gD6 = h(con(con(con(con(gA3,rg),gxj),gSIDj),T2)) in
+      let M2 = (gPIDi,gD4,gD5,gD6,T2) in
+      out(ch,M2);
+      in(ch,(gD7:bitstring,gD8:bitstring,gD9:bitstring,gD10:bitstring,gT3:bitstring));
+      let SIDjnew = xor(gD7,h(rg)) in
+      let gxj = h(con(SIDjnew,x)) in
+      let gA4 = xor(gD8,gxj) in
+      let hA4SK = xor(xor(gD10,hSKrg),gxj) in
+      new PIDinew:bitstring;
+      let gB1new = h(con(PIDinew,x)) in
+      let D11 = xor(con(gBlnew,rg),gB1) in
+      let D12 = xor(con(PIDinew,gA4),h(con(gB1new,gA3))) in
+      let D13 = h(con(PIDinew,hA4SK)) in
+      let M4 = (D11,D12,D13) in
+      out(ch,M4).
+
+
+let Sensor =
+  in(sch2,sxj:bitstring);
+  in(ch,(sPIDi:bitstring,sD4:bitstring,sD5:bitstring,sD6:bitstring,sT2:bitstring));
+  let (srg:bitstring,sA3:bitstring) = xor(sD4,h(con(sxj,SIDj))) in
+  let (sSIDj:bitstring,sB1:bitstring) = xor(sD5,h(con(sxj,srg))) in
+  if sD6 = h(con(con(con(sA3,srg),sxj),sSIDj),sT2) then
+    new rs:bitstring;
+    new T3:bitstring;
+    let A4 = mul(P,rs) in
+    let A5 = mul(sA3,rs) in
+    let SKs = h(con(con(A5,h(sB1)),srg)) in
+    let sD7 = xor(SIDj,h(srg)) in
+    let sD8 = xor(con(A4,h(con(SKs,srg))),sxj) in
+    let sD9 = xor(con(con(con(A4,h(con(SKs,srg))),sxj),T3)) in
+    let sD10 = xor(xor(h(con(Sks,srg)),sxj),h(con(A4,SKs))) in
+    let M3 = (sD7,sD8,sD9,sD10,T3) in
+    out(ch,M3).
+
+
+    (* Four goals in verifying the protocol: *)
+process
+((!User) | (!GWN) | (!Sensor))
+((!User) | (!GWN) | (!Sensor) | (out(ch,ru,rs)))
+((!User) | (!GWN) | (!Sensor) | (out(ch,sxj)))
+((!User) | (!GWN) | (!Sensor) | (out(ch,x))) 

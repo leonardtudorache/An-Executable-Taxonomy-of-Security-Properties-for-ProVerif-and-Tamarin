@@ -1,0 +1,172 @@
+(*---channels---*)
+free ch: channel.
+free sch1: channel [private].
+free sch2: channel [private].
+
+(* Encryption and Decryption *)
+type beta.
+type alpha.
+fun enc(bitstring,beta):bitstring.
+fun dec(bitstring,alpha):bitstring.
+equation forall m:bitstring, k1:beta, k2:alpha; dec(enc(m,k1),k2) = m.
+
+(*---session keys---*)
+free sku: bitstring [private].
+free sks: bitstring [private].
+
+(*---User's Secret Keys---*)
+free Ualpha:bitstring [private].
+free Ubeta: bitstring.
+free K: bitstring [private]. (*shared between user and gateway*)
+free A2: bitstring [private]. (*shared between user and gateway*)
+
+(*---Gateway's Secret keys---*)
+free Galpha:alpha [private].
+free Gbeta:beta.
+free L:bitstring [private]. (*shared between sensor node and gateway*)
+
+(*---Sensor Node's Secret Keys 20 ---*)
+free Salpha:bitstring [private].
+free Sbeta:bitstring.
+free A5:bitstring [private]. (*shared between sensor node and gateway*)
+
+(*---constants---*)
+const P: bitstring.
+free UIDi:bitstring [private].
+free PWi:bitstring [private].
+free BIOi:bitstring [private].
+free HBi:bitstring [private].
+const SIDj:bitstring.
+const GIDj:bitstring.
+table user(bitstring).
+table sensor(bitstring).
+table gateway(bitstring).
+
+(*---functions---*)
+fun h(bitstring):bitstring. (*hash function*)
+fun ecpm(bitstring,bitstring):bitstring. (*elliptic curve point multiplication*)
+fun ecpa(bitstring,bitstring):bitstring. (*elliptic curve point addition*)
+fun mul(bitstring,bitstring):bitstring. (*mathematical multiplication*)
+fun add(bitstring,bitstring):bitstring. (*mathematical addition*)
+fun con(bitstring,bitstring,bitstring):bitstring. (*string concatenation*)
+fun con1(bitstring,bitstring):bitstring. (*string concatenation*)
+fun con2(bitstring,beta,bitstring):bitstring.
+fun con3(bitstring,beta):bitstring.
+
+(*---queries---*)
+query attacker(sku).
+query attacker(sks).
+(* Missing in the original model. *)
+(* noninterf UIDi. *) 
+query id:bitstring; inj-event(UserAuth(id))==>
+inj-event(UserStart(id)).
+
+(*---event---*)
+event UserStart(bitstring).
+event UserAuth(bitstring).
+
+(*---Gateway's process---*)
+let GWNReg1 =
+    in(sch1,(X:bitstring,Y:bitstring,Z:bitstring));
+    let x = dec(X,Galpha) in
+    let y = dec(Y,Galpha) in
+    let z = dec(Z,Galpha) in
+    let N1' = h(con1(con2(GIDj,Gbeta,K),z)) in
+    let A2' = h(con(N1',y,K)) in
+    if A2'=x then
+        new c:bitstring;
+        let C = ecpa(ecpm(c,P), ecpm(K,P)) in
+        let A3=h(con(GIDj,C,A2')) in
+        let A4=h(con(A3,z,K)) in
+        insert gateway(A2');
+        out(sch1,(A3,A4)).
+
+let GWNReg2 =
+    in(sch2,(A6:bitstring,A5:bitstring,D:bitstring));
+    let A6' = h(con(A5,D,L)) in
+    if A6'=A6 then
+        new e:bitstring;
+        let E=ecpa(ecpm(e,P),ecpm(L,P)) in
+        let A7=h(con(GIDj,E,A5)) in
+        let A8=h(con1(con(A7,A6,D),L)) in
+        insert gateway(A5);
+        out(sch2,(A7,A8)).
+
+let GWNAuth =
+    in(ch,(I2:bitstring,B:bitstring,T1:bitstring));
+    new T2:bitstring;(*148*)
+    let I1'=h(con(A2,K,Ubeta)) in
+    let I2'=h(con(I1',T1,B)) in
+    if I2'=I2 then
+        event UserAuth(UIDi);
+        let I3=h(con2(A5,Gbeta,L)) in
+        let I4=h(con(I3,T2,B)) in
+        out(ch,(I4,B,T2));
+        in(ch,(I6:bitstring,D:bitstring,T3:bitstring));
+        new T4:bitstring;
+        let I5'=h(con1(con(GIDj,L,Sbeta),I3)) in
+        let I6'=h(con1(con(I5',T3,D),B)) in
+        if I6'=I6 then
+            let I7=h(con2(A2,Gbeta,K)) in
+            let I8=h(con(I7,T4,D)) in
+            out(ch,(I8,D,T4)).
+
+let GWN = GWNReg1|GWNReg2|GWNAuth.
+
+(*---User's process---*)
+let User =
+    new b:bitstring;
+    let A1 = h(con1(con(UIDi,PWi,BIOi),HBi)) in
+    let B = ecpm(b,P) in
+    let N1 = h(con1(con2(GIDj,Gbeta,K),B)) in
+    let N2 = ecpm(A1,P) in
+    let A2 = h(con(N1,N2,K)) in
+    out(sch1,(enc(A2,Gbeta),enc(N2,Gbeta),enc(B,Gbeta)));
+    in(sch1,(A3:bitstring,A4:bitstring));
+    let A4'=h(con(A3,B,K)) in (*72*)
+    if A4=A4' then
+        let Ualpha=h(con(b,A1,A3)) in
+        let Ubeta=ecpm(Ualpha,P) in
+        insert user(A2);
+        (
+            event UserStart(UIDi);
+            new T1:bitstring;
+            let I1=h(con(A2,K,Ubeta)) in
+            let I2=h(con(I1,T1,B)) in
+            out(ch,(I2,B,T1));
+            in(ch,(I8:bitstring,D:bitstring,T4:bitstring));
+            new T5:bitstring;
+            let I7'=h(con2(A2,Gbeta,K)) in
+            let I8'=h(con(I7',T4,D)) in
+            if I8'=I8 then
+                let SKu=ecpa(ecpm(b,Sbeta),ecpm(D,Ualpha)) in
+                0
+        ).
+
+(*---Sensor's process---*)
+let Sensor =
+    new d:bitstring;
+    let D=ecpm(d,P) in
+    let A5=h(con3(SIDj,Gbeta)) in
+    let A6=h(con(A5,D,L)) in
+    out(sch2,(A5,A6,D));
+    in(sch2,(A7:bitstring,A8:bitstring));
+    let A8'=h(con1(con(A7,A6,D),L)) in
+    if A8'=A8 then
+        let Salpha=h(con(d,A5,A7)) in
+        let Sbeta=ecpm(Salpha,P) in
+        insert sensor(A5);
+        (
+            in(ch,(I4:bitstring,B:bitstring,T2:bitstring));
+            new T3:bitstring;(*110*)
+            let I3'=h(con2(A5,Gbeta,L)) in
+            let I4'=h(con(I3',T2,B)) in
+            if I4'=I4 then
+                let I5=h(con1(con(GIDj,L,Sbeta),I3')) in
+                let I6=h(con1(con(I5,T3,D),B)) in
+                out(ch,(I6,D,T3));
+                let SKs=ecpa(ecpm(d,Ubeta),ecpm(B,Salpha)) in
+                0
+        ).
+
+process !User|!GWN|!Sensor

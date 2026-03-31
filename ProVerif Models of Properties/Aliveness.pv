@@ -1,0 +1,34 @@
+free c : channel.
+
+type key.
+fun pk(key): key.
+fun sign(bitstring, key): bitstring.
+fun checksign(bitstring, key): bitstring
+
+reduc forall m: bitstring, k: key; checksign(sign(m, k), pk(k)) = m.
+
+event begin_B(bitstring).   
+event end_A(bitstring).   
+
+(* Query: If A finishes, B must have started with the same nonce *)
+query x: bitstring; event(end_A(x)) ==> event(begin_B(x)).
+
+let initiatorA(pkB: key) =
+  new na: bitstring;
+  out(c, na);
+  in(c, (nb: bitstring, sig: bitstring));
+
+  if checksign(sig, pkB) = (nb, na) then 
+    event end_A(na).
+
+let responderB(skB: key) =
+  in(c, na: bitstring);
+  event begin_B(na);
+  new nb: bitstring;
+  out(c, (nb, sign((nb, na), skB))).
+
+process
+  new skB: key;
+  let pkB = pk(skB) in
+  out(c, pkB);
+  (! initiatorA(pkB)) | (! responderB(skB))
