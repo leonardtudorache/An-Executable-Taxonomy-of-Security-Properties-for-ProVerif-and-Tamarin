@@ -1,5 +1,7 @@
 # Bridging Theory and Practice: An Executable Taxonomy of Security Properties for ProVerif and Tamarin
 
+[![DOI](https://zenodo.org/badge/1193461070.svg)](https://doi.org/10.5281/zenodo.19352739)
+
 ### **Project Overview**
 
 Security is fundamentally critical for modern digital systems. As internet and cryptographic protocols govern almost all digital interactions, they must serve as reliable mechanisms that guarantee core security properties like **confidentiality** and **integrity**.
