@@ -11,4 +11,4 @@ let session(u: uid) =
 
 (* Biprocess: left = both sessions use U; right = second uses V *)
 process
-  ( session(U) | session(choice[U, V]) )
+  ( !session(U) | !session(choice[U, V]) )

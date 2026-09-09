@@ -1,47 +1,47 @@
 free c: channel.
-
-type skey.
-type pkey.
-
-table commit(bitstring, bitstring).
-free skA: skey [private].
+type skey. type pkey.
 
 fun pk(skey): pkey.
 fun sign(bitstring, skey): bitstring.
 reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
 
-event committed(bitstring, bitstring).
-event check().
+free skH: skey [private].   (* host — leaked below *)
+free skT: skey [private].   (* trinket attestation key — never leaked *)
 
-set preciseActions = true.
+table used(bitstring, bitstring).
 
-event bad_equivocation().
+event Attested(bitstring, bitstring).
+event Accepted(bitstring, bitstring).
 
-query tag: bitstring, m1: bitstring, m2: bitstring;
-      event(committed(tag, m1)) && event(committed(tag, m2)) ==> m1 = m2.
+(* Hardware guarantee: a counter slot is consumed at most once.
+   This is the trusted-component assumption, discharged by the
+   hardware, not by ProVerif. *)
+restriction ctr: bitstring, m1: bitstring, m2: bitstring;
+    event(Attested(ctr, m1)) && event(Attested(ctr, m2)) ==> m1 = m2.
 
-(* Also show no explicit violation happens *)
-query event(bad_equivocation()).
+query ctr: bitstring, m1: bitstring, m2: bitstring;
+    event(Accepted(ctr, m1)) && event(Accepted(ctr, m2)) ==> m1 = m2.
 
-let signer =
-    in(c, tag: bitstring);     
-    in(c, m: bitstring);       
+query ctr: bitstring, m: bitstring; event(Accepted(ctr, m)).
 
-    get commit(tag_1, m_old: bitstring) in
-    (
-        if m <> m_old then
-        event bad_equivocation();  
-        0                          
-    )
+let trinket =
+    in(c, (ctr: bitstring, m: bitstring));
+    get used(=ctr, m_old) in
+    ( if m = m_old then out(c, sign((ctr, m), skT)) )
     else
-    insert commit(tag, m) ;         
-    event committed(tag, m);
-    let s: bitstring = sign(m, skA) in
-    event check();
-    out(c, (tag, m, s))
-    .
+    (
+        event Attested(ctr, m);
+        insert used(ctr, m);
+        out(c, sign((ctr, m), skT))
+    ).
+
+let verifier =
+    in(c, (ctr: bitstring, m: bitstring, sH: bitstring, sT: bitstring));
+    if checksign(sH, pk(skH)) = m then
+    if checksign(sT, pk(skT)) = (ctr, m) then
+    event Accepted(ctr, m).
 
 process
-    let pkA: pkey = pk(skA) in
-    out(c, pkA);
-    signer
+    out(c, pk(skH)); out(c, pk(skT));
+    out(c, skH);
+    ( !trinket | !verifier )

@@ -7,11 +7,11 @@ fun checksign(bitstring, key): bitstring
 
 reduc forall m: bitstring, k: key; checksign(sign(m, k), pk(k)) = m.
 
-event begin_B(bitstring).   
-event end_A(bitstring).   
+event begin_B().   
+event end_A().   
 
 (* Query: If A finishes, B must have started with the same nonce *)
-query x: bitstring; event(end_A(x)) ==> event(begin_B(x)).
+query x: bitstring; event(end_A()) ==> event(begin_B()).
 
 let initiatorA(pkB: key) =
   new na: bitstring;
@@ -19,11 +19,11 @@ let initiatorA(pkB: key) =
   in(c, (nb: bitstring, sig: bitstring));
 
   if checksign(sig, pkB) = (nb, na) then 
-    event end_A(na).
+    event end_A().
 
 let responderB(skB: key) =
   in(c, na: bitstring);
-  event begin_B(na);
+  event begin_B();
   new nb: bitstring;
   out(c, (nb, sign((nb, na), skB))).
 

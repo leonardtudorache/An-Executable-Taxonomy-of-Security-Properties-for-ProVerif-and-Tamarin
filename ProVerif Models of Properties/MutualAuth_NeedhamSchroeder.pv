@@ -53,15 +53,13 @@ table keys(host, pkey).
 fun messtermI(host, host): bitstring [data].
 fun messtermR(host, host): bitstring [data].
 
-event termI(host, host, bitstring).
-event acceptsI(host, host, bitstring).
-event acceptsR(host, host, bitstring).
-event termR(host, host, bitstring).
+event start(host, host, nonce).
+event end(host, host, nonce).
 
-query x: host, m: bitstring; 
-      inj-event(termI(x,B,m)) ==> inj-event(acceptsR(x,B,m)).
-query x: host, m: bitstring; 
-      inj-event(termR(A,x,m)) ==> inj-event(acceptsI(A,x,m)).
+query x: host, m: nonce; 
+      event(end(x,B,m)) ==> event(start(B,x,m)).   (* end(A,B) ==> start(B,A), A:=x *)
+query x: host, m: nonce; 
+      event(end(x,A,m)) ==> event(start(A,x,m)).   (* end(B,A) ==> start(A,B), B:=x *)
 
 (* Role of the initiator with identity xA and secret key skxA *)
 let processInitiator(pkS: spkey, skA: skey, skB: skey) =
@@ -82,14 +80,15 @@ let processInitiator(pkS: spkey, skA: skey, skB: skey) =
 	let (pkX: pkey, =hostX) = checksign(ms,pkS) in
 	(* Message 3 *)
 	new Na: nonce;
+	event start(xA, hostX, Na);
 	let m3 = encrypt((Na, xA), pkX) in
 	out(c, m3);
 	(* Message 6 *)
 	in(c, m: bitstring); 
-	let (=Na, NX2: nonce, =hostX) = decrypt(m, skA) in
+	let (=Na, NX2: nonce, =hostX) = decrypt(m, skxA) in
+	event end(xA, hostX, NX2);
 	let m7 = encrypt(nonce_to_bitstring(NX2), pkX) in
-	event termI(xA, hostX, (m3, m));
-	event acceptsI(xA, hostX, (m3, m, m7));
+	
 	(* Message 7 *)
 	out(c, (m7, messtermI(xA, hostX))).
 
@@ -106,6 +105,7 @@ let processResponder(pkS: spkey, skA: skey, skB: skey) =
 	(* Message 3 *)
 	in(c, m: bitstring);
 	let (NY: nonce, hostY: host) = decrypt(m, skxB) in
+	
 	(* Message 4: Get the public key certificate for the other host *)
 	out(c, (xB, hostY));
 	(* Message 5 *)
@@ -114,12 +114,14 @@ let processResponder(pkS: spkey, skA: skey, skB: skey) =
 	(* Message 6 *)
 	new Nb: nonce;
 	let m6 = encrypt((NY, Nb, xB), pkY) in
-	event acceptsR(hostY, xB, (m, m6));
+	event start(xB, hostY, Nb);
+	
 	out(c, m6);
 	(* Message 7 *)
 	in(c, m3: bitstring);
-	if nonce_to_bitstring(Nb) = decrypt(m3, skB) then
-	event termR(hostY, xB, (m, m6, m3));
+	
+	if nonce_to_bitstring(Nb) = decrypt(m3, skxB) then
+	event end(xB, hostY, NY);
 	out(c, messtermR(hostY, xB)).
 
 (* Server *)
