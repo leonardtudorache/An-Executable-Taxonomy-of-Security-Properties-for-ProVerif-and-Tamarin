@@ -6,6 +6,13 @@ Retreived from ProVerif examples
 Can be found in the ProVerif manual as well
 *)
 
+(*
+  Injective Agreement (Section 4.2.1): the strongest Lowe level. Both
+  sides must commit to the same shared data, AND each 'end' must
+  correspond to its own distinct 'start' -- no replay can satisfy two
+  different completions. Checked here via ProVerif's inj-event.
+*)
+
 free c: channel.
 
 type host.
@@ -53,13 +60,18 @@ table keys(host, pkey).
 fun messtermI(host, host): bitstring [data].
 fun messtermR(host, host): bitstring [data].
 
-event termI(host, host, bitstring).
+event end(host, host, bitstring).
 event acceptsI(host, host, bitstring).
-event acceptsR(host, host, bitstring).
+event start(host, host, bitstring).
 event termR(host, host, bitstring).
 
 query x: host, m: bitstring; 
-      inj-event(termI(x,B,m)) ==> inj-event(acceptsR(x,B,m)).
+      inj-event(end(x,B,m)) ==> inj-event(start(B,x,m)).
+
+(* --- Executability -------------------------------------------------
+   An injective correspondence is trivially satisfied when the claiming
+   event never occurs, so check that the initiator can reach it. *)
+query x: host, y: host, m: bitstring; event(end(x,y,m)).
 
 (* Role of the initiator with identity xA and secret key skxA *)
 let processInitiator(pkS: spkey, skA: skey, skB: skey) =
@@ -86,7 +98,7 @@ let processInitiator(pkS: spkey, skA: skey, skB: skey) =
 	in(c, m: bitstring); 
 	let (=Na, NX2: nonce, =hostX) = decrypt(m, skxA) in
 	let m7 = encrypt(nonce_to_bitstring(NX2), pkX) in
-	event termI(xA, hostX, (m3, m));
+	event end(xA, hostX, (m3, m));
 	event acceptsI(xA, hostX, (m3, m, m7));
 	(* Message 7 *)
 	out(c, (m7, messtermI(xA, hostX))).
@@ -112,7 +124,7 @@ let processResponder(pkS: spkey, skA: skey, skB: skey) =
 	(* Message 6 *)
 	new Nb: nonce;
 	let m6 = encrypt((NY, Nb, xB), pkY) in
-	event acceptsR(hostY, xB, (m, m6));
+	event start(xB, hostY, (m, m6));
 	out(c, m6);
 	(* Message 7 *)
 	in(c, m3: bitstring);

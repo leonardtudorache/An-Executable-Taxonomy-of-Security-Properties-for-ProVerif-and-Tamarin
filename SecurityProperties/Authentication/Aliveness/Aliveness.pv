@@ -1,3 +1,16 @@
+(*
+  Aliveness (Section 4.2.1 of the taxonomy) is the weakest form of
+  authentication: it only requires that the other agent has been
+  active in the protocol at some point -- not that it was talking to
+  us specifically, or recently.
+
+  Event placement follows the paper's convention: start() is raised at
+  the responder's FIRST step, as early as possible in B's execution,
+  while end() is raised at the initiator's LAST step, after A has
+  verified the signature. Placing start() late would let the
+  correspondence be satisfied trivially.
+*)
+
 free c : channel.
 
 type key.
@@ -7,11 +20,18 @@ fun checksign(bitstring, key): bitstring
 
 reduc forall m: bitstring, k: key; checksign(sign(m, k), pk(k)) = m.
 
-event begin_B().   
-event end_A().   
+event start().   
+event end().   
 
-(* Query: If A finishes, B must have started with the same nonce *)
-query x: bitstring; event(end_A()) ==> event(begin_B()).
+(* Query: if A finishes, some run of the responder must have started.
+   No nonce and no peer are matched -- agreement on the exchanged data
+   is weak / non-injective agreement, not aliveness. *)
+query x: bitstring; event(end()) ==> event(start()).
+
+(* --- Executability -------------------------------------------------
+   A correspondence "end ==> start" is trivially true when end is
+   unreachable, so check that the initiator can actually finish. *)
+query event(end()).
 
 let initiatorA(pkB: key) =
   new na: bitstring;
@@ -19,11 +39,11 @@ let initiatorA(pkB: key) =
   in(c, (nb: bitstring, sig: bitstring));
 
   if checksign(sig, pkB) = (nb, na) then 
-    event end_A().
+    event end().
 
 let responderB(skB: key) =
   in(c, na: bitstring);
-  event begin_B();
+  event start();
   new nb: bitstring;
   out(c, (nb, sign((nb, na), skB))).
 

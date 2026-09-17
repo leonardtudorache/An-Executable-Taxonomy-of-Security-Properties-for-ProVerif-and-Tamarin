@@ -1,3 +1,8 @@
+/* Note: Section 4.2.5's Traceability requires a trusted party to be
+   ABLE to trace a sender; this file instead models RFID
+   untraceability -- that a tag's sessions cannot be linked by an
+   observer (a related but opposite-flavored privacy property). */
+
 theory RFID_Auth
 begin
 

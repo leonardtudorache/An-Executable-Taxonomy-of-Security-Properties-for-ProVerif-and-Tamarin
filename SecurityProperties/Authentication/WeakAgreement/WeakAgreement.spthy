@@ -18,6 +18,11 @@ builtins: asymmetric-encryption
  */
 
 
+/* Weak Agreement (Section 4.2.1): if A ends believing it talked to B,
+   B must have started a session believing it was talking to A (no
+   shared-data requirement yet -- see non-injective/injective
+   agreement). See the 'weak_agreement' lemma at the end. */
+
 // Public key infrastructure
 rule Register_pk:
   [ Fr(~ltkA) ]
@@ -61,7 +66,7 @@ rule R_1:
     ]
   --[ IN_R_1_ni( ni, m1 )
     , OUT_R_1( m2 )
-    , Running(I, $R, <'init',ni,~nr>)
+    , Start(I, $R, <'init',ni,~nr>)
     , Create(I)
     ]->
     [ Out( m2 )
@@ -78,8 +83,8 @@ rule I_2:
     , !Pk(R, pkR)
     ]
   --[ IN_I_2_nr( nr, m2)
-    // , Commit (I, R, <'init',ni,nr>)
-    , Running(R, I, <'resp',ni,nr>) 
+    // , End (I, R, <'init',ni,nr>)
+    , Start(R, I, <'resp',ni,nr>) 
     ]->
     [ Out( m3 )
     , Secret(I,R,nr)
@@ -91,7 +96,7 @@ rule R_2:
     , !Ltk(R, ltkR)
     , In( aenc{'3', nr}pk(ltkR) )
     ]
-  --[ Commit (R, I, <'resp',ni,nr>)
+  --[ End (I, R, <'resp',ni,nr>)
     ]->
     [ Secret(R,I,nr)
     , Secret(R,I,ni)
@@ -133,8 +138,23 @@ lemma types [sources]:
     )
   "
 
+  /* Weak Agreement: End(a,b,t1) requires a prior Start(a,b,t2) for SOME
+     term t2 -- the two sides must agree on each other's identity, but
+     not on any shared data (that is what non-injective agreement adds).
+
+     Mind the argument order. This model emits the two actions with
+     opposite conventions:
+       R_2 (responder): End(R, I, ...)          -- (self, peer)
+       I_2 (initiator): Start(R, I, <'resp'...>) -- (peer, self)
+     so the witness for End(a,b,_) is Start(a,b,_), which is an action of
+     b, the peer. Writing Start(b,a,t2) here instead -- the shape used in
+     the Tamarin manual, whose Running/Commit convention differs from this
+     model's -- unifies with R_1's own Start(I,$R,<'init',ni,~nr>). R_2
+     cannot fire without consuming the St_R_1 that R_1 produced, so that
+     witness is structurally guaranteed and the lemma becomes trivially
+     true, proving nothing about the initiator. */
   lemma weak_agreement:
-    "All a b t1 #i. Commit(a,b,t1) @i ==> 
-      (Ex t2 #j. Running(b,a,t2) @j)"
+    "All A B t1 #i. End(B,A,t1) @i ==> 
+      (Ex t2 #j. Start(A,B,t2) @j)"
 
 end

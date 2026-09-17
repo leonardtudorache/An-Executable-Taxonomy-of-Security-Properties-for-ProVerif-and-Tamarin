@@ -1,3 +1,12 @@
+(*
+  Post-Compromise Security (Section 4.2.3), a.k.a. backward secrecy:
+  even after a full compromise, a later key-agreement step can 'heal'
+  the protocol so future communication is secure again. Phase 1 below
+  is the compromise/leak; phase 2 is the healing + sending data that
+  should stay secret despite the earlier leak. compromise/heal mark
+  those two moments.
+*)
+
 (* Types and Constants *)
 type key.
 type exponent.
@@ -25,6 +34,9 @@ free c: channel.
 free secret_future_data: bitstring [private].
 
 event check().
+event compromise(id_key, id_key).
+event heal(id_key, id_key, key).
+
 query event(check()).
 
 (* Query: Post-Compromise Security (Backward Secrecy) *)
@@ -35,6 +47,7 @@ let Alice(rk_0: key, skA: id_key, pkB: id_key) =
     (* --- PHASE 1: THE COMPROMISE --- *)
     phase 1;
     out(c, rk_0); (* Symmetric state is leaked to attacker *)
+    event compromise(pub(skA), pkB);
 
     (* --- PHASE 2: THE HEALING --- *)
     phase 2;
@@ -47,7 +60,7 @@ let Alice(rk_0: key, skA: id_key, pkB: id_key) =
         let shared_secret = exp(gb, a) in
         let rk_1 = kdf(rk_0, shared_secret) in
         let chain_key = h(rk_1) in
-        
+        event heal(pub(skA), pkB, chain_key);
         out(c, enc(secret_future_data, chain_key))
     ).
 
@@ -67,7 +80,7 @@ let Bob(rk_0: key, skB: id_key, pkA: id_key) =
         let shared_secret = exp(ga, b) in
         let rk_1 = kdf(rk_0, shared_secret) in
         let chain_key = h(rk_1) in
-        
+        event heal(pkA, pub(skB), chain_key);
         in(c, ciphertext: bitstring);
         let decrypted_data = dec(ciphertext, chain_key) in
         event check();

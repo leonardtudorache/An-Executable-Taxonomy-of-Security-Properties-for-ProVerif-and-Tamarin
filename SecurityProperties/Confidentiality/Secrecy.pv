@@ -1,3 +1,9 @@
+(*
+  Confidentiality / Secrecy (Section 4.2.3): the base property behind
+  this whole category -- a value marked secret must never be learned
+  (derived) by the attacker, however the protocol is attacked.
+*)
+
 type key.
 free public: channel.
 
@@ -7,12 +13,17 @@ reduc forall m: bitstring, k: key; sdec(senc(m, k), k) = m.
 free secret_msg: bitstring [private].
 query attacker(secret_msg).
 
+(* --- Reachability --- *)
+event Completed(bitstring).
+query m: bitstring; event(Completed(m)).
+
 let processAlice(k: key) =
     out(public, senc(secret_msg, k)).
 
 let processBob(k: key) =
     in(public, x: bitstring);
     let m = sdec(x, k) in
+    event Completed(m);
     0.
 
 process

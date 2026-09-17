@@ -6,28 +6,28 @@ builtins: asymmetric-encryption
 /*
    Protocol:    The classic three message version of the
                 Needham-Schroeder-Lowe Public Key Protocol
-   Modeler:     Simon Meier
-   Date:        June 2012
+   Modeler:     Simon Meier (adapted)
    Source:      Modeled after the description by Paulson in
                 Isabelle/HOL/Auth/NS_Public.thy.
 
-   Status:      working
+   Start/End follow the agreement-hierarchy convention:
 
-   Note that we are using explicit global constants for discerning the
-   different encryption instead of the implicit sources.
- */
+     Start(A, B, data)  -- A begins a session apparently with B,
+                           carrying `data`
+     End(A, B, data)    -- A completes a session apparently with B,
+                           carrying `data`
 
+   Only aliveness is verified below. `data` carries the role tag
+   plus (I, R, ni[, nr]) so weak agreement, non-injective agreement,
+   and injective agreement can be added later purely as new lemma
+   statements over Start/End, without changing the rules.
+*/
 
 // Public key infrastructure
 rule Register_pk:
   [ Fr(~ltkA) ]
   -->
   [ !Ltk($A, ~ltkA), !Pk($A, pk(~ltkA)), Out(pk(~ltkA)) ]
-
-// Remove the reveal long-term key rule
-// rule Reveal_ltk:
-//   [ !Ltk(A, ltkA) ] --[ RevLtk(A)    ]-> [ Out(ltkA) ]
-
 
 /* We formalize the following protocol
 
@@ -45,6 +45,7 @@ rule I_1:
     , !Pk($R, pkR)
     ]
   --[ OUT_I_1(m1)
+    , Start($I, $R, <'I', $I, $R, ~ni>)
     ]->
     [ Out( m1 )
     , St_I_1($I, $R, ~ni)
@@ -61,8 +62,7 @@ rule R_1:
     ]
   --[ IN_R_1_ni( ni, m1 )
     , OUT_R_1( m2 )
-    , Running(I, $R, <'init',ni,~nr>)
-    , Create(I)
+    , Start($R, I, <'R', I, $R, ni>)
     ]->
     [ Out( m2 )
     , St_R_1($R, I, ni, ~nr)
@@ -78,8 +78,7 @@ rule I_2:
     , !Pk(R, pkR)
     ]
   --[ IN_I_2_nr( nr, m2)
-    // , Commit (I, R, <'init',ni,nr>)
-    , Running(R, I, <'resp',ni,nr>) 
+    , End(I, R, <'I', I, R, ni, nr>)
     ]->
     [ Out( m3 )
     , Secret(I,R,nr)
@@ -91,17 +90,13 @@ rule R_2:
     , !Ltk(R, ltkR)
     , In( aenc{'3', nr}pk(ltkR) )
     ]
-  --[ Commit (R, I, <'resp',ni,nr>)
-    ]->
+  --[ End(R, I, <'R', I, R, ni, nr>) ]->
     [ Secret(R,I,nr)
     , Secret(R,I,ni)
     ]
 
-/* TODO: Also model session-key reveals and adapt security properties. */
 rule Secrecy_claim:
   [ Secret(A, B, m) ] --[ Secret(A, B, m) ]-> []
-
-
 
 /* Note that we are using an untyped protocol model.
 The contents of the 'ni' variable in rule R_1 may therefore in general be any
@@ -133,7 +128,15 @@ lemma types [sources]:
     )
   "
 
-  // 1. Aliveness
-  lemma aliveness: 
-    "All a b t #i. Commit(a, b, t)@i ==> (Ex #j. Create(b) @ j)"
+/* Aliveness: the weakest property in the agreement hierarchy -- if
+   A completes a session apparently with B, then B must have
+   started *some* session of the protocol, in any role, with any
+   peer, on any data. No matching of peer or data is required
+   (that belongs to weak agreement and above). */
+lemma aliveness:
+  "All A B t #i.
+     End(A, B, t) @ i
+     ==>
+     (Ex C t2 #j. Start(B, C, t2) @ j)"
+
 end

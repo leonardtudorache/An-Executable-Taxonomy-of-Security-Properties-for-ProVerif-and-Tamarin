@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# OS metadata
+# ---------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+.directory
+
+# ---------------------------------------------------------------------------
+# Editors
+# ---------------------------------------------------------------------------
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# ---------------------------------------------------------------------------
+# Python (Data Visualization/ notebooks)
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# ---------------------------------------------------------------------------
+# Tool scratch
+#   tamarin-prover --output / graph exports, and interactive-mode temporaries.
+#   ProVerif writes nothing by default, but -graph emits these too.
+# ---------------------------------------------------------------------------
+*.dot
+*.dot.png
+tamarin-*.tmp
+.tamarin/
+
+# ---------------------------------------------------------------------------
+# Session scratch
+# ---------------------------------------------------------------------------
+Claude outputs/
+_to_delete/
+
+# ---------------------------------------------------------------------------
+# Verification output is deliberately NOT ignored.
+#
+# results/ and proverif-results.txt are the evidence that the models in this
+# repository actually verify, and which tool versions produced that result.
+# For a companion artefact to a paper that is worth keeping in version
+# control: a reader can check the claims without installing either prover,
+# and a regression shows up as a diff.
+#
+# If the raw logs turn out to be too noisy to track, ignore only the verbose
+# per-run output and keep the summaries:
+#
+#   results/run-*.log
+#   proverif-results.txt
+# ---------------------------------------------------------------------------

@@ -1,4 +1,9 @@
 (* Anonymity protocol model *)
+(* Anonymity (Section 4.2.4): an agent's real identifier must stay
+   hidden from the attacker even while legitimately taking part. The
+   attacker should never learn p_id despite seeing the encrypted
+   traffic below. *)
+
 free c: channel.
 type key.
 
@@ -13,6 +18,10 @@ reduc forall x:bitstring, y:key; dec(enc(x,y),y) = x.
 (* Anonymity query *)
 query attacker(p_id).
 
+(* --- Executability --- *)
+event QReceived(bitstring).
+query m: bitstring; event(QReceived(m)).
+
 let P(p_id: bitstring) = 
     new m: bitstring;
     let m_enc = enc((m, p_id), k) in
@@ -21,6 +30,7 @@ let P(p_id: bitstring) =
 let Q() = 
     in(c, enc_msg: bitstring);
     let (m: bitstring, new_id: bitstring) = dec(enc_msg, k) in
+    event QReceived(m);
     0.
 
 process

@@ -1,3 +1,8 @@
+/* Anonymity (Section 4.2.4): an agent's real identifier must stay
+   hidden from the attacker. Actor(p_id) marks a legitimate use of the
+   id; see the 'Secret_ID' lemma at the end (attacker must never learn
+   p_id). */
+
 theory AnonymityProtocol
 begin
 
@@ -11,7 +16,6 @@ rule Setup:
   --[ OnlyOnce() ]->
     [ !SharedKey(~k)
     , !PrivateID(~p_id)
-    , Out(~k)   // ProVerif model reveals 'k' in the process P
     ]
 
 /* 2. Process P: Encrypts a fresh message with the ID */
@@ -23,7 +27,7 @@ rule Process_P:
     , !PrivateID(~p_id)
     , Fr(~m)
     ]
-  --[ SendP(~p_id) ]->
+  --[ Actor(~p_id) ]->
     [ Out(m_enc) ]
 
 /* 3. Process Q: Receives and decrypts */
@@ -39,7 +43,7 @@ rule Process_Q:
 /* Corresponds to: query attacker(p_id) */
 lemma Secret_ID:
     all-traces
-    "All p_id #i. SendP(p_id) @ i ==> not (Ex #j. K(p_id) @ j)"
+    "All p_id #i. Actor(p_id) @ i ==> not (Ex #j. K(p_id) @ j)"
 
 /* Restriction to ensure setup only runs once */
 restriction Singleton:

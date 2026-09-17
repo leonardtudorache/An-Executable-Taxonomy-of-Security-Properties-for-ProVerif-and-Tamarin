@@ -1,3 +1,10 @@
+(*
+  Weak Agreement (Section 4.2.1): if A finishes believing it talked to
+  B, B must have genuinely started a session believing it was talking
+  to A. Unlike stronger levels below, the two sides need not agree on
+  the same data. start/end mark each side's commitment point.
+*)
+
 free c : channel.
 
 type pkey.
@@ -13,19 +20,19 @@ reduc forall x: bitstring, y: skey; decrypt(encrypt(x,pk(y)),y) = x.
 fun sign(bitstring, skey): bitstring.
 reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
 
-event begin_B(pkey, pkey).
-event end_A(pkey, pkey).
+event start(pkey, pkey).
+event end(pkey, pkey).
 event reached().
 
 query secret na.
-query pkA: pkey, pkB: pkey, na: bitstring; event(end_A(pkB, pkA)) ==> event(begin_B(pkA, pkB)).
+query pkA: pkey, pkB: pkey, na: bitstring; event(end(pkB, pkA)) ==> event(start(pkA, pkB)).
 query event(reached()). 
 
 
 
 let B(skB: skey, pkA: pkey)= 
     new na: bitstring;
-    event begin_B(pk(skB), pkA);
+    event start(pk(skB), pkA);
     let msg = encrypt(na, pkA) in
     let signed_msg = sign(msg, skB) in
     
@@ -47,7 +54,7 @@ let A(skA: skey, pkB: pkey) =
     let signed_msg = sign(msg, skA) in
     out(c, signed_msg);
     (* event reached(); *)
-    event end_A(pk(skA), pkB).
+    event end(pk(skA), pkB).
 
 process
     let pkA = pk(skA) in

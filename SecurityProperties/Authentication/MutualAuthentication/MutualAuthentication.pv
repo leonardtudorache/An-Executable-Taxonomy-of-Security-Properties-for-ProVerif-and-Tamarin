@@ -6,6 +6,12 @@ Retreived from ProVerif examples
 Can be found in the ProVerif manual as well
 *)
 
+(*
+  Mutual Authentication (Section 4.2.1): not a new primitive, just
+  Lowe's agreement checked in BOTH directions at once -- A agrees with
+  B on the session, and B agrees with A on the same session.
+*)
+
 free c: channel.
 
 type host.
@@ -60,6 +66,11 @@ query x: host, m: nonce;
       event(end(x,B,m)) ==> event(start(B,x,m)).   (* end(A,B) ==> start(B,A), A:=x *)
 query x: host, m: nonce; 
       event(end(x,A,m)) ==> event(start(A,x,m)).   (* end(B,A) ==> start(A,B), B:=x *)
+
+(* --- Executability -------------------------------------------------
+   Both directions above are trivially true if no end event is ever
+   reached, so check reachability once for the shared end event. *)
+query x: host, y: host, m: nonce; event(end(x,y,m)).
 
 (* Role of the initiator with identity xA and secret key skxA *)
 let processInitiator(pkS: spkey, skA: skey, skB: skey) =

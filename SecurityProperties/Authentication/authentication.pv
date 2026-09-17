@@ -1,0 +1,104 @@
+(*
+  Authentication -- ProVerif model
+  =================================================
+  Implements the events and queries corresponding to the formal
+  definitions in Section 4.2.1 of the taxonomy:
+
+    end(A,B,t,i)        A has completed a run of the protocol,
+                        apparently with B, with term t, at trace step i.
+    start(B,A,t,j)      B has started (participated in) a session
+                        with A, with term t, at trace step j.
+    compromise(A,B,t,i) A relevant compromise involving A or B
+                        occurred before time i. The model abstracts
+                        this to a unary compromise(X) recording which
+                        agent's long-term key leaked.
+
+  Placement convention (as stated in the paper): end(A,B,t) is placed
+  as LATE as possible in A's execution (after all of A's verification
+  steps), and start(B,A,t) is placed as EARLY as possible in B's
+  execution (as soon as B commits to t believing it is talking to A).
+  This maximizes the strength of the guarantee independently of which
+  agent plays which protocol role.
+
+  Example protocol: a signature-based, ISO/IEC 9798-3-style mutual
+  challenge-response between an Initiator (A) and a Responder (B).
+    1. A -> B : A, nA
+    2. B -> A : sign( (nA, nB, B), skB )
+    3. A -> B : sign( nB, skA )
+
+  This is only a vehicle to instantiate the events; the queries below
+  are the reusable pattern for the taxonomy entry "Authentication".
+*)
+
+free c: channel.
+
+type host.
+type skey.
+type pkey.
+
+fun pk(skey): pkey.
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
+
+free A, B: host.
+free skA, skB: skey [private].
+
+(* --- Events matching the taxonomy's formal definition --- *)
+event start(host, host, bitstring).       (* start(B,A,t) *)
+event end(host, host, bitstring).         (* end(A,B,t)   *)
+event compromise(host).             (* compromise(A), abstracted over t/i *)
+
+(* Authentication provided some compromise did not happen (Section 4.2.1):
+   end(A,B,t,i) => (exists j : start(B,A,t,j)) OR compromise(A,B,t,i)
+   ProVerif's correspondence "==>" already enforces that whatever
+   satisfies the right-hand disjunct must occur earlier in the trace
+   than the end event, which captures the "before time i" requirement
+   without needing an explicit time argument. *)
+query A: host, B: host, t: bitstring;
+  event(end(A,B,t)) ==> (event(start(B,A,t)) || event(compromise(B))).
+
+(* --- Executability --- *)
+query A: host, B: host, t: bitstring; event(end(A,B,t)).
+
+(* --- Roles --- *)
+let responder(bB: host, bA: host, skb: skey, pkA: pkey) =
+    in(c, (=bA, nA: bitstring));
+    new nB: bitstring;
+    (* start placed as early as possible: as soon as B commits to
+       the term (nA,nB) believing it is interacting with A *)
+    event start(bB, bA, (nA, nB));
+    out(c, sign((nA, nB, bB), skb));
+    in(c, sigA: bitstring);
+    let nB2 = checksign(sigA, pkA) in
+    if nB2 = nB then
+      0.
+
+let initiator(bA: host, bB: host, ska: skey, pkB: pkey) =
+    new nA: bitstring;
+    out(c, (bA, nA));
+    in(c, sigB: bitstring);
+    let (=nA, nB: bitstring, =bB) = checksign(sigB, pkB) in
+    (* end placed as late as possible: only after A has verified
+       B's signature over the shared term *)
+    event end(bA, bB, (nA, nB));
+    out(c, sign(nB, ska)).
+
+(* Models leakage of a long-term signing key: an explicit compromise
+   event is emitted at the point of leakage, and the key itself
+   becomes attacker knowledge from that point on. *)
+let leakA() =
+    event compromise(A);
+    out(c, skA).
+
+let leakB() =
+    event compromise(B);
+    out(c, skB).
+
+process
+    out(c, pk(skA));
+    out(c, pk(skB));
+    ( (!initiator(A, B, skA, pk(skB)))
+    | (!responder(B, A, skB, pk(skA)))
+    | (!leakA())
+    | (!leakB())
+    )

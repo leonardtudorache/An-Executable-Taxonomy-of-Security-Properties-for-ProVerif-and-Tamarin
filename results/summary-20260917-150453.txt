@@ -1,0 +1,39 @@
+
+======================================================================
+STATUS    VERDICT     MODEL                                                      DETAIL
+----------------------------------------------------------------------
+PASS      true        Accountability/Non-repudiation/Non-Repudiation.pv          1 security + 1 reachability ok (0s)
+PASS      verified    Accountability/Non-repudiation/Non-repudiation.spthy       1/1 lemmas (0s)
+PASS      true        Accountability/Traceability/Untraceability.pv              2 security + 2 reachability ok (0s)
+PASS      verified    Accountability/Traceability/Untraceability.spthy           2/2 lemmas (0s)
+PASS      true        Authentication/Aliveness/Aliveness.pv                      1 security + 1 reachability ok (0s)
+PASS      verified    Authentication/Aliveness/Aliveness.spthy                   2/2 lemmas (1s)
+PASS      true        Authentication/InjectiveAgreement/InjectiveAgreement.pv    1 security + 1 reachability ok (0s)
+PASS      verified    Authentication/InjectiveAgreement/InjectiveAgreement.spthy 2/2 lemmas (0s)
+PASS      true        Authentication/MutualAuthentication/MutualAuthentication.pv 2 security + 1 reachability ok (0s)
+PASS      verified    Authentication/MutualAuthentication/MutualAuthentication.spthy 1/1 lemmas (6s)
+PASS      verified    Authentication/Non-injectiveAgreement/Non-injectiveAgreement.spthy 2/2 lemmas (0s)
+PASS      true        Authentication/Non-injectiveAgreement/NonInjectiveAgreement.pv 1 security + 1 reachability ok (0s)
+PASS      true        Authentication/WeakAgreement/WeakAgreement.pv              2 security + 1 reachability ok (0s)
+PASS      verified    Authentication/WeakAgreement/WeakAgreement.spthy           2/2 lemmas (1s)
+PASS      true        Authentication/authentication.pv                           1 security + 1 reachability ok (0s)
+PASS      verified    Authentication/authentication.spthy                        2/2 lemmas (0s)
+PASS      true        Confidentiality/ForwardSecrecy/ForwardSecrecy.pv           2 security + 1 reachability ok (0s)
+PASS      verified    Confidentiality/ForwardSecrecy/ForwardSecrecy.spthy        1/1 lemmas (1s)
+PASS      true        Confidentiality/Post-compromiseSecurity/PostCompromiseSecurity.pv 1 security + 1 reachability ok (0s)
+PASS      verified    Confidentiality/Post-compromiseSecurity/PostCompromiseSecurity.spthy 2/2 lemmas (5s)
+PASS      true        Confidentiality/Secrecy.pv                                 1 security + 1 reachability ok (0s)
+PASS      verified    Confidentiality/Secrecy.spthy                              2/2 lemmas (0s)
+PASS      true        Integrity/Non-equivocation/Non-equivocation.pv             3 security + 1 reachability ok (0s)
+PASS      verified    Integrity/Non-equivocation/Non-equivocation.spthy          5/5 lemmas (1s)
+PASS      true        Integrity/Unforgeability/Unforgeability.pv                 1 security + 1 reachability ok (0s)
+PASS      verified    Integrity/Unforgeability/Unforgeability.spthy              2/2 lemmas (0s)
+PASS      true        Privacy/Anonymity/Anonymity.pv                             1 security + 1 reachability ok (0s)
+PASS      verified    Privacy/Anonymity/Anonymity.spthy                          1/1 lemmas (0s)
+PASS      true        Privacy/Unlinkability/Unlinkability.pv                     1 security + 0 reachability ok (0s)
+PASS      verified    Privacy/Unlinkability/Unlinkability.spthy                  1/1 lemmas (0s)
+----------------------------------------------------------------------
+passed: 30   failed: 0   skipped: 0
+RESULT: all models proved.
+======================================================================
+full log: /Users/leo/Documents/Git Projects/An-Executable-Taxonomy-of-Security-Properties-for-ProVerif-and-Tamarin/results/run-20260917-150453.log

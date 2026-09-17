@@ -1,3 +1,11 @@
+(*
+  Forward Secrecy (Section 4.2.3): a session key (and data sent under
+  it) stays secret even if the long-term keys used to set it up leak
+  LATER. The long-term keys are only revealed in phase 1, after the
+  phase-0 key exchange below completes; secrecy of the earlier
+  session is then checked despite that later leak.
+*)
+
 set traceDisplay = long.
 
 type G.

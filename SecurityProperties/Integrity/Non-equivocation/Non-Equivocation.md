@@ -1,31 +1,26 @@
 ```mermaid
 sequenceDiagram
-    participant Attacker
     participant Signer
+    participant Receiver
 
-    Note over Signer: Key Generation: skA
-    Note over Signer: Let pkA = pk(skA)
-    Signer->>Attacker: send(pkA)
+    Note over Signer: Sign(A, B, m0, zero)
+    Signer->>Receiver: (A, B, m0, zero, sig0)
 
-    Note over Attacker: Choose tag
-    Attacker->>Signer: send(tag)
+    Note over Receiver: Check b0 = B
+    Note over Receiver: Verify sig0 against bind(A, B, m0, zero)
+    Note over Receiver: Trigger event accepted(A, B, m0, zero)
+    Note over Receiver: Advance local chain position to zero
 
-    Note over Attacker: Choose message m
-    Attacker->>Signer: send(m)
+    Note over Signer: Sign(A, B, m1, succ(zero))
+    Signer->>Receiver: (A, B, m1, succ(zero), sig1)
 
-    Note over Signer: Access Table commit(tag, m_old)
+    Note over Receiver: Require a1 = a0 (same claimed sender as the zero-step)
+    Note over Receiver: Verify sig1 against bind(A, B, m1, succ(zero))
+    Note over Receiver: Trigger event accepted(A, B, m1, succ(zero))
+    Note over Receiver: Trigger event accepted_link(A, B, m0, m1, zero) -- carries m0 forward as the completeness witness
+    Note over Receiver: Advance local chain position to succ(zero)
 
-    alt Tag ALREADY exists (get successful)
-        Note over Signer: Check if m <> m_old
-        opt m != m_old (Equivocation Attempt)
-            Note over Signer: Trigger event bad_equivocation()
-            Note over Signer: Process stops (0)
-        end
-    else Tag is NEW (get fails)
-        Note over Signer: insert commit(tag, m)
-        Note over Signer: Trigger event committed(tag, m)
-        Note over Signer: Let s = sign(m, skA)
-        Note over Signer: Trigger event check()
-        Signer->>Attacker: send((tag, m, s))
-    end
+    Note over Signer, Receiver: (i) Completeness -- accepted_link(.., m0, m1, zero) implies accepted(A, B, m0, zero) already happened
+    Note over Signer, Receiver: (ii) Order preservation -- zero is always accepted before succ(zero)
+    Note over Signer, Receiver: (iii) Uniqueness -- a given counter is accepted at most once (within this single Signer/Receiver instance; see .pv comments on why the pair is not replicated)
 ```

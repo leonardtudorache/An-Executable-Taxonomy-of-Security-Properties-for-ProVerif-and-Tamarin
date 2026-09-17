@@ -1,3 +1,7 @@
+/* Forward Secrecy (Section 4.2.3): a session key stays secret even if
+   the long-term keys leak. Reveal_P_sk/Reveal_Q_sk below model
+   that leak; see the 'forward_secrecy' lemma at the end. */
+
 theory Generated
 begin
 
@@ -5,6 +9,7 @@ builtins: revealing-signing, diffie-hellman, asymmetric-encryption, symmetric-en
 
 functions: group2key/1
 
+// 1. Register P's long-term key pair
 rule Register_P:
   [
     Fr(~sk)
@@ -16,6 +21,7 @@ rule Register_P:
     Out(pk(~sk))
   ]
 
+// 2. Register Q's long-term key pair
 rule Register_Q:
   [
     Fr(~sk)
@@ -28,6 +34,7 @@ rule Register_Q:
   ]
 
 
+// 3. P starts a Diffie-Hellman exchange (sends g^a, signed)
 rule P_start:
   [
     !Ltk($P, ~sk),
@@ -39,6 +46,7 @@ rule P_start:
     State_P_1(~sk, ~a)
   ]
 
+// 4. P receives Q's g^b, derives the session key, sends a secret message under it
 rule P_responds_to_step2:
   let
     msg_tuple = getMessage(step2_p0)
@@ -57,6 +65,7 @@ rule P_responds_to_step2:
     Out(senc(~m, k))
   ]
 
+// 5. Q receives P's g^a and replies with its own g^b, signed
 rule Q_responds_to_step1:
   let
     msg_tuple = getMessage(step1_p0)
@@ -74,6 +83,7 @@ rule Q_responds_to_step1:
     State_Q_1(~sk, g_a, ~b)
   ]
 
+// 6. Q derives the same session key and decrypts the message
 rule Q_responds_to_step3:
   let
     k = group2key(g_a^~b)
@@ -94,14 +104,16 @@ restriction Equality:
 restriction Inequality:
   "All x #i. Neq(x,x) @i ==> F"
 
+// 7. Later: P's long-term key leaks (forward secrecy must still hold)
 rule Reveal_P_sk:
   [ !Ltk($P, ~sk) ]
-  --[ Reveal($P) ]->
+  --[ Leaked($P) ]->
   [ Out(~sk) ]
 
+// 8. Later: Q's long-term key leaks
 rule Reveal_Q_sk:
   [ !Ltk($Q, ~sk) ]
-  --[ Reveal($Q) ]->
+  --[ Leaked($Q) ]->
   [ Out(~sk) ]
 
 lemma forward_secrecy:
@@ -110,6 +122,6 @@ lemma forward_secrecy:
     ==>
     not (Ex #j. K(m) @j)
     |
-    (Ex B #r. Reveal(B) @r & Honest(B) @i & r < i)"
+    (Ex B #r. Leaked(B) @r & Honest(B) @i & r < i)"
 
 end

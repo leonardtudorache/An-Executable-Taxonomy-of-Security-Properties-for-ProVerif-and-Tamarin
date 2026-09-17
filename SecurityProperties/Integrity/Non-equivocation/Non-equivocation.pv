@@ -1,47 +1,120 @@
+(*
+  Non-equivocation (channel-side), Section 4.2.2 of the taxonomy:
+    sent(A,B,m,c)     Agent A sent message m, tagged with sequence
+                       counter c, to B.
+    accepted(A,B,m,c) Agent B accepted message m, tagged with
+                       sequence counter c, from A.
+
+  (i)   Completeness:     accepting counter succ(c) implies counter c
+                           was already accepted earlier.
+  (ii)  Order preservation: acceptance happens in counter order. This
+                           is guaranteed STRUCTURALLY here -- B's role
+                           is written as a straight-line sequence, so
+                           it can only process the succ(c) message
+                           after the c message has completed. It is
+                           not restated as a separate query because,
+                           with only two counter values in scope, the
+                           ordering statement collapses into the
+                           completeness query above. (ProVerif's
+                           "event(e) ==> event(e')" does already
+                           require e' to occur earlier in the trace,
+                           so simple ordering IS expressible; what it
+                           lacks is Tamarin's explicit timepoints for
+                           relating two independently quantified
+                           events.) See Non-equivocation.spthy for the
+                           same clause stated as its own lemma.
+  (iii) Uniqueness:       the same (A,B,c) is never accepted with two
+                           different messages.
+
+
+*)
+
+type host.
+type key.
+type counter.
+
+const zero: counter [data].
+fun succ(counter): counter [data].
+
+fun pk(key): key.
+fun sign(bitstring, key): bitstring.
+reduc forall m: bitstring, k: key; checksign(sign(m, k), pk(k)) = m.
+
+(* Bind sender, receiver, payload and counter into one signed object,
+   so a valid signature cannot be replayed under a different
+   receiver or counter. *)
+fun bind(host, host, bitstring, counter): bitstring [data].
+
 free c: channel.
-type skey. type pkey.
+free A, B: host.
 
-fun pk(skey): pkey.
-fun sign(bitstring, skey): bitstring.
-reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
+event sent(host, host, bitstring, counter).
+event accepted(host, host, bitstring, counter).
 
-free skH: skey [private].   (* host — leaked below *)
-free skT: skey [private].   (* trinket attestation key — never leaked *)
+(* accepted_link(hA,hB,mPrev,mNew,cn) is emitted ONLY at the succ-step,
+   right after the receiver's own earlier acceptance of mPrev at
+   counter cn (mPrev is the actual process-local variable bound by
+   that earlier "in(...)" -- not a fresh/unrelated name). This is how
+   the "exists an earlier accepted message" witness of completeness is
+   expressed in ProVerif: there is no exists-quantifier for query
+   conclusions, so instead the witness is carried forward as an
+   explicit event argument, bound once by the process itself, rather
+   than invented at the query level. This replaces the earlier,
+   incorrect attempt that left a bare "m0" out of the query header --
+   that "m0" did not become existentially quantified; ProVerif treated
+   it as an undeclared free identifier (rendered as m0[] in output),
+   i.e. one fixed, arbitrary constant unrelated to any real message,
+   which is why that query was reported false. *)
+event accepted_link(host, host, bitstring, bitstring, counter).
 
-table used(bitstring, bitstring).
+(* (i) Completeness *)
+query hA: host, hB: host, mPrev: bitstring, mNew: bitstring, cn: counter;
+    event(accepted_link(hA, hB, mPrev, mNew, cn)) ==>
+    event(accepted(hA, hB, mPrev, cn)).
 
-event Attested(bitstring, bitstring).
-event Accepted(bitstring, bitstring).
+(* (iii) Uniqueness *)
+query hA: host, hB: host, m1: bitstring, m2: bitstring, cn: counter;
+    event(accepted(hA, hB, m1, cn)) && event(accepted(hA, hB, m2, cn)) ==> m1 = m2.
 
-(* Hardware guarantee: a counter slot is consumed at most once.
-   This is the trusted-component assumption, discharged by the
-   hardware, not by ProVerif. *)
-restriction ctr: bitstring, m1: bitstring, m2: bitstring;
-    event(Attested(ctr, m1)) && event(Attested(ctr, m2)) ==> m1 = m2.
+(* Soundness: an accepted message really was sent by the claimed signer *)
+query hA: host, hB: host, m: bitstring, cn: counter;
+    event(accepted(hA, hB, m, cn)) ==> event(sent(hA, hB, m, cn)).
 
-query ctr: bitstring, m1: bitstring, m2: bitstring;
-    event(Accepted(ctr, m1)) && event(Accepted(ctr, m2)) ==> m1 = m2.
+(* Reachability *)
+query hA: host, hB: host, m: bitstring, cn: counter; event(accepted(hA, hB, m, cn)).
 
-query ctr: bitstring, m: bitstring; event(Accepted(ctr, m)).
+let Signer(skA: key, hB: host) =
+    new m0: bitstring;
+    event sent(A, hB, m0, zero);
+    out(c, (A, hB, m0, zero, sign(bind(A, hB, m0, zero), skA)));
 
-let trinket =
-    in(c, (ctr: bitstring, m: bitstring));
-    get used(=ctr, m_old) in
-    ( if m = m_old then out(c, sign((ctr, m), skT)) )
-    else
-    (
-        event Attested(ctr, m);
-        insert used(ctr, m);
-        out(c, sign((ctr, m), skT))
-    ).
+    new m1: bitstring;
+    event sent(A, hB, m1, succ(zero));
+    out(c, (A, hB, m1, succ(zero), sign(bind(A, hB, m1, succ(zero)), skA))).
 
-let verifier =
-    in(c, (ctr: bitstring, m: bitstring, sH: bitstring, sT: bitstring));
-    if checksign(sH, pk(skH)) = m then
-    if checksign(sT, pk(skT)) = (ctr, m) then
-    event Accepted(ctr, m).
+let Receiver(pkA: key, hB: host) =
+    (* Counter zero: no predecessor required *)
+    in(c, (a0: host, b0: host, m0: bitstring, cnt0: counter, sig0: bitstring));
+    if cnt0 = zero then
+    if b0 = hB then
+    if checksign(sig0, pkA) = bind(a0, b0, m0, cnt0) then
+    event accepted(a0, hB, m0, zero);
+
+    (* Counter succ(zero): only accepted once counter zero has already
+       been accepted from the SAME claimed sender on this same
+       receiver instance. m0 here is exactly the message just accepted
+       above -- it is what accepted_link forwards as the completeness
+       witness. *)
+    in(c, (a1: host, b1: host, m1: bitstring, cnt1: counter, sig1: bitstring));
+    if cnt1 = succ(zero) then
+    if a1 = a0 then
+    if b1 = hB then
+    if checksign(sig1, pkA) = bind(a1, b1, m1, cnt1) then
+    event accepted(a1, hB, m1, succ(zero));
+    event accepted_link(a1, hB, m0, m1, zero).
 
 process
-    out(c, pk(skH)); out(c, pk(skT));
-    out(c, skH);
-    ( !trinket | !verifier )
+    new skA: key;
+    let pkA = pk(skA) in
+    out(c, pkA);
+    ( Signer(skA, B) | Receiver(pkA, B) )

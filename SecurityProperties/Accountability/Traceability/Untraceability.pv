@@ -1,4 +1,13 @@
 (* Model create based on: https://ieeexplore.ieee.org/abstract/document/5402514 *)
+(*
+  Note: Section 4.2.5 defines Traceability as a TRUSTED PARTY being
+  ABLE to trace a message back to its sender. This file instead
+  models the related but opposite-flavored privacy property -- RFID
+  untraceability: that a tag's sessions CANNOT be linked by an
+  observer. Keep this naming difference in mind when comparing to the
+  taxonomy's formal Traceability definition.
+*)
+
 (* Types and constants *)
 type tag_id.
 type message.
@@ -32,6 +41,9 @@ query t1: tag_id, t2: tag_id;
     event(TagEnd(t1)) && event(TagEnd(t2)) ==>
     (t1 = t2) || (event(TagStart(t1)) && event(TagStart(t2))).
 
+query id: tag_id; event(ReaderEnd(id)).
+query id: tag_id; event(TagEnd(id)).
+
 let Tag(id: tag_id, k: key) =
     in(c, x: message);
     if x = Welcome then (
@@ -48,7 +60,7 @@ let Reader(k: key) =
     in(c, m: bitstring);
     let (w: message, id: tag_id) = decrypt(m, k) in
     if w = Welcome then (
-        event ReaderStart(id);
+        event ReaderEnd(id);
         (* Database check *)
         out(db, id)
     ).

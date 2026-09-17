@@ -1,3 +1,18 @@
+/* Non-repudiation (Section 4.2.5): this auction example checks that
+   a Won claim traces back to an earlier real Bid -- the same idea as
+   the paper's obs(m)==>sent(m), in a concrete auction setting. See
+   the 'NonRepudiation' lemma at the end.
+
+   SCOPE -- what this model does NOT cover. Section 4.2.5 gives a
+   second, stronger formalization, verifies(J,e,a,m) => sent(a,m),
+   where J is an independent third-party judge and e is an evidence
+   term cryptographically binding a to m. This model has neither a
+   judge role nor an evidence term: Won and Bid are two events of the
+   same protocol, so what is checked here is closer to a
+   correspondence between roles than to third-party verifiability.
+   Adding the judge is the missing piece for full coverage of the
+   taxonomy's definition. */
+
 theory AuctionNonRepudiation
 begin
 

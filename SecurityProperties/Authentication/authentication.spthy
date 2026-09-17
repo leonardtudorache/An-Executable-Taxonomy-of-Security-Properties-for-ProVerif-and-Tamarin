@@ -1,0 +1,103 @@
+/*
+  Authentication -- Tamarin model
+  ================================================
+  Tamarin counterpart of authentication.pv in this folder.
+
+  Events correspond to the taxonomy's formal definitions as follows:
+    End(A,B,t)         A has completed a run of the protocol,
+                       apparently with B, with term t.
+    Start(B,A,t)       B has started (participated in) a session
+                       with A, with term t.
+    Compromise(X)      X's long-term key was revealed. The paper
+                       writes compromise(A,B,t,i), "a relevant
+                       compromise involving A or B", so this model
+                       abstracts away both the session term t and the
+                       pair, recording only WHICH agent leaked.
+
+  The correspondence is not literally 1:1. Agent identities here are
+  the fixed public constants 'A' and 'B', so the Auth lemma's
+  "All A B t" ranges over exactly two names rather than over all
+  agents as in the paper's definition.
+*/
+
+theory AuthenticationLoweHierarchy
+begin
+
+builtins: signing
+
+/* 1. Setup: generate long-term signing keys for A and B */
+rule Setup:
+    [ Fr(~skA), Fr(~skB) ]
+  --[ OnlyOnce() ]->
+    [ !LtkA(~skA), !LtkB(~skB),
+      !PkA(pk(~skA)), !PkB(pk(~skB)),
+      Out(pk(~skA)), Out(pk(~skB)) ]
+
+/* 2. Initiator, step 1: A sends its name and a fresh nonce nA */
+rule Initiator_1:
+    [ Fr(~nA) ]
+  -->
+    [ Out(<'A', ~nA>), St_Init(~nA) ]
+
+/* 3. Responder: receives (A, nA), generates nB, raises Start as
+      early as possible (as soon as it commits to the term), then
+      replies with (nA, nB, sign((nA,nB,B), skB)) */
+rule Responder:
+    [ In(<'A', nA>), Fr(~nB), !LtkB(~skB) ]
+  --[ Start('B', 'A', <nA, ~nB>) ]->
+    [ Out(<nA, ~nB, sign(<nA, ~nB, 'B'>, ~skB)>), St_Resp(nA, ~nB) ]
+
+/* 4. Initiator, step 2: A receives B's reply, checks the signature,
+      raises End as late as possible (only after verification), then
+      replies with (nB, sign(nB, skA)) */
+rule Initiator_2:
+    [ St_Init(~nA), In(<~nA, nB, sigB>), !PkB(pkB), !LtkA(~skA) ]
+  --[ Eq(verify(sigB, <~nA, nB, 'B'>, pkB), true),
+      End('A', 'B', <~nA, nB>) ]->
+    [ Out(<nB, sign(nB, ~skA)>) ]
+
+/* 5. Responder, step 2: B receives A's final signature and verifies it */
+rule Responder_2:
+    [ St_Resp(nA, ~nB), In(<~nB, sigA>), !PkA(pkA) ]
+  --[ Eq(verify(sigA, ~nB, pkA), true),
+      Accept('B', 'A', <nA, ~nB>) ]->
+    [ ]
+
+/* Key leakage: emits an explicit Compromise event at the point of
+   leakage, then makes the long-term key attacker knowledge. */
+rule LeakA:
+    [ !LtkA(~skA) ]
+  --[ Compromise('A') ]->
+    [ Out(~skA) ]
+
+rule LeakB:
+    [ !LtkB(~skB) ]
+  --[ Compromise('B') ]->
+    [ Out(~skB) ]
+
+/* --- Restrictions --- */
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+restriction OnlyOnce:
+  "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
+
+/* Authentication provided some compromise did not happen:
+   End(A,B,t,i) => (exists j<i : Start(B,A,t,j)) OR (exists k<i : Compromise(B,k))
+   Unlike ProVerif, Tamarin timepoints are explicit, so the "before
+   time i" requirement is written directly with j < i / k < i rather
+   than relying on implicit trace-order semantics. */
+lemma Auth:
+  all-traces
+  "All A B t #i.
+     End(A,B,t) @ i ==>
+     (Ex #j. Start(B,A,t) @ j & j < i)
+     | (Ex #k. Compromise(B) @ k & k < i)"
+
+/* Sanity check: the protocol can actually complete a run */
+lemma Executability:
+  exists-trace
+  "Ex A B t #i. End(A,B,t) @ i"
+
+end

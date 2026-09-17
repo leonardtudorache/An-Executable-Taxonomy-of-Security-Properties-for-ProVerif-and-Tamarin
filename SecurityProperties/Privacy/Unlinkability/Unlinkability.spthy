@@ -1,5 +1,10 @@
 // tamarin-prover --diff --prove Unlinkability.spthy
 
+/* Unlinkability (Section 4.2.4): the taxonomy paper's own worked
+   example, checked via observational equivalence (Tamarin's diff):
+   Session_Two may use U or V -- if the attacker can't tell which,
+   unlinkability holds. Run with: tamarin-prover --diff --prove. */
+
 theory IdentityPrivacy
 begin
 

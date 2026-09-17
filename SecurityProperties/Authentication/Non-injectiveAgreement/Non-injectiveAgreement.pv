@@ -6,6 +6,13 @@ Retreived from ProVerif examples
 Can be found in the ProVerif manual as well
 *)
 
+(*
+  Non-injective Agreement (Section 4.2.1): stronger than weak
+  agreement -- both sides must commit to the SAME shared data (e.g. a
+  nonce) -- but still allows one run of B to seemingly agree with more
+  than one run of A (no 1-to-1 guarantee; see injective agreement).
+*)
+
 free c: channel.
 
 type host.
@@ -52,11 +59,16 @@ table keys(host, pkey).
 (* Queries *)
 fun messtermI(host, host): bitstring [data].
 
-event acceptsI(host, host, bitstring).
-event termR(host, host, bitstring).
+event start(host, host, bitstring).
+event end(host, host, bitstring).
 
 query x: host, m: bitstring; 
-      event(termR(A,x,m)) ==> event(acceptsI(A,x,m)).
+      event(end(A,x,m)) ==> event(start(x,A,m)).
+
+(* --- Executability -------------------------------------------------
+   Guards the correspondence above against holding vacuously because
+   the responder can never reach its end event. *)
+query x: host, y: host, m: bitstring; event(end(x,y,m)).
 
 (* Role of the initiator with identity xA and secret key skxA *)
 let processInitiator(pkS: spkey, skA: skey, skB: skey) =
@@ -83,7 +95,7 @@ let processInitiator(pkS: spkey, skA: skey, skB: skey) =
 	in(c, m: bitstring); 
 	let (=Na, NX2: nonce, =hostX) = decrypt(m, skA) in
 	let m7 = encrypt(nonce_to_bitstring(NX2), pkX) in
-	event acceptsI(xA, hostX, (m3, m, m7));
+	event start(hostX, xA, (m3, m, m7));
 	(* Message 7 *)
 	out(c, (m7, messtermI(xA, hostX))).
 
@@ -112,7 +124,7 @@ let processResponder(pkS: spkey, skA: skey, skB: skey) =
 	(* Message 7 *)
 	in(c, m3: bitstring);
 	if nonce_to_bitstring(Nb) = decrypt(m3, skB) then
-	event termR(hostY, xB, (m, m6, m3)).
+	event end(hostY, xB, (m, m6, m3)).
 
 (* Server *)
 let processS(skS: sskey) =  

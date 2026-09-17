@@ -13,6 +13,6 @@ sequenceDiagram
 
     Note over B: Receive signed message s1
     Note over B: Verify using pkA → m = checksign(s1, pkA)
-    Note over B: Trigger event valid_signature(m, pkA)
+    Note over B: Trigger event valid_sig(m, pkA)
     Note over B: Trigger event check()
 ```

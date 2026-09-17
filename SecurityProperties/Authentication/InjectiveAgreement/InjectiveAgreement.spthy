@@ -18,6 +18,11 @@ builtins: asymmetric-encryption
  */
 
 
+/* Injective Agreement (Section 4.2.1): the strongest Lowe level --
+   both sides commit to the same data, and each End corresponds to its
+   own distinct Start (no replay can satisfy two completions). See the
+   'injectiveagreement' lemma at the end. */
+
 // Public key infrastructure
 rule Register_pk:
   [ Fr(~ltkA) ]
@@ -61,7 +66,7 @@ rule R_1:
     ]
   --[ IN_R_1_ni( ni, m1 )
     , OUT_R_1( m2 )
-    , Running(I, $R, <'init',ni,~nr>)
+    , Start(I, $R, <'init',ni,~nr>)
     , Create(I)
     ]->
     [ Out( m2 )
@@ -78,8 +83,8 @@ rule I_2:
     , !Pk(R, pkR)
     ]
   --[ IN_I_2_nr( nr, m2)
-    // , Commit (I, R, <'init',ni,nr>)
-    , Running(R, I, <'resp',ni,nr>) 
+    // , End (I, R, <'init',ni,nr>)
+    , Start(R, I, <'resp',ni,nr>) 
     ]->
     [ Out( m3 )
     , Secret(I,R,nr)
@@ -91,7 +96,7 @@ rule R_2:
     , !Ltk(R, ltkR)
     , In( aenc{'3', nr}pk(ltkR) )
     ]
-  --[ Commit (R, I, <'resp',ni,nr>)
+  --[ End (R, I, <'resp',ni,nr>)
     ]->
     [ Secret(R,I,nr)
     , Secret(R,I,ni)
@@ -134,8 +139,9 @@ lemma types [sources]:
   "
 
 
+  // Injective Agreement: End(A,B,t) requires a strictly earlier, unique Start(A,B,t)
   lemma injectiveagreement:
-      "All A B t #i. Commit(A,B,t) @i ==> 
-        (Ex #j. Running(A,B,t) @j & j < i 
-          & not (Ex A2 B2 #i2. Commit(A2,B2,t) @i2 & not (#i2 = #i)))"
+      "All A B t #i. End(A,B,t) @i ==> 
+        (Ex #j. Start(A,B,t) @j & j < i 
+          & not (Ex A2 B2 #i2. End(A2,B2,t) @i2 & not (#i2 = #i)))"
 end

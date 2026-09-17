@@ -1,3 +1,11 @@
+(*
+  Unforgeability (Section 4.2.2): nobody but the legitimate signer can
+  produce a message that validates as signed by them. signed_by marks
+  a real signing action; valid_sig marks a signature that checks out;
+  the query requires every validated signature to trace back to an
+  actual signing action.
+*)
+
 free c: channel.
 
 type skey.
@@ -9,10 +17,10 @@ fun sign(bitstring, skey): bitstring.
 reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
 
 event signed_by(skey, bitstring).
-event valid_signature(bitstring, pkey).
+event valid_sig(bitstring, pkey).
 event check().
 
-query m: bitstring, sk: skey; event(valid_signature(m, pk(sk))) ==> event(signed_by(sk, m)).
+query m: bitstring, sk: skey; event(valid_sig(m, pk(sk))) ==> event(signed_by(sk, m)).
 query event(check()).
 
 free skA: skey [private].
@@ -28,7 +36,7 @@ let processB(pkA: pkey) =
   in(c, signed_message: bitstring);
   let m = checksign(signed_message, pkA) in
 
-  event valid_signature(m, pkA);
+  event valid_sig(m, pkA);
   event check();
   0.
 

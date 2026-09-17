@@ -1,6 +1,25 @@
 (* Based on this https://link.springer.com/chapter/10.1007/978-3-642-36830-1_13 *)
 
 
+(*
+  Non-repudiation (Section 4.2.5): an agent must be able to prove
+  another agent really sent a message, typically to a judge. This
+  auction example checks won(bid)==>bid(bid) rather than the paper's
+  exact obs(m)==>sent(m) form, but captures the same idea: a later
+  claim must trace back to an earlier, real send.
+
+  SCOPE -- what this model does NOT cover. Section 4.2.5 gives a
+  second, stronger formalization,
+      verifies(J,e,a,m) => sent(a,m),
+  where J is an independent third-party judge and e is an evidence
+  term (a signature, say) cryptographically binding a to m. This
+  model has neither a judge role nor an evidence term: won and bid
+  are two events of the same protocol, so what is checked here is
+  closer to a correspondence between roles than to third-party
+  verifiability. Adding the judge is the missing piece for full
+  coverage of the taxonomy's definition.
+*)
+
 (* Types and channels *)
 type price.
 type identity.
@@ -16,6 +35,13 @@ event won(price, identity).
 (* Query to verify non-repudiation property *)
 query p:price, id:identity; 
     event(won(p,id)) ==> event(bid(p,id)).
+
+(* --- Executability -------------------------------------------------
+   ProVerif reports "not event(won(...)) is false" when a win is
+   REACHABLE, which is the result we want. If it ever reports "is true",
+   the auction can never complete and the correspondence above is
+   holding vacuously rather than being proved. *)
+query p:price, id:identity; event(won(p,id)).
 
 (* Cryptographic primitives *)
 fun pk(key): key.

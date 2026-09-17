@@ -4,33 +4,30 @@ sequenceDiagram
     participant Server
     participant Responder
 
-    Note over Initiator: Choose identity xA
+    Note over Initiator: Choose identity xA and target hostX
     Initiator->>Server: send(xA, hostX)
 
-    Note over Server: Retrieve public key for hostX
+    Note over Server: Retrieve public key certificate for hostX
     Server->>Initiator: send(sign((pkX, hostX), skS))
 
     Note over Initiator: Generate nonce Na
-    Note over Initiator: Trigger event start(xA, hostX, Na)
     Initiator->>Responder: send(encrypt((Na, xA), pkX))
 
-    Note over Responder: Decrypt message
-    Note over Responder: Extract nonce Na, hostY
+    Note over Responder: Decrypt message, extract Na and hostY
     Responder->>Server: send(xB, hostY)
 
-    Note over Server: Retrieve public key for hostY
+    Note over Server: Retrieve public key certificate for hostY
     Server->>Responder: send(sign((pkY, hostY), skS))
 
     Note over Responder: Generate nonce Nb
-    Note over Responder: Trigger event start(xB, hostY, Nb)
     Responder->>Initiator: send(encrypt((Na, Nb, xB), pkY))
 
     Note over Initiator: Decrypt message
-    Note over Initiator: Trigger event end(xA, hostX, NX2)
+    Note over Initiator: Trigger event start(xA, hostX, (m3, m, m7))
     Initiator->>Responder: send(encrypt(Nb, pkX))
 
     Note over Responder: Verify Nb
-    Note over Responder: Trigger event end(xB, hostY, NY)
+    Note over Responder: Trigger event end(hostY, xB, (m, m6, m3))
 
-    Note over Initiator, Responder: Properties: event(end(x,B,m)) ==> event(start(B,x,m)) and event(end(x,A,m)) ==> event(start(A,x,m))
+    Note over Initiator, Responder: Property: event(end(A,x,m)) ==> event(start(A,x,m))
 ```

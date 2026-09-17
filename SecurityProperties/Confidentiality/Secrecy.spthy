@@ -1,3 +1,7 @@
+/* Confidentiality / Secrecy (Section 4.2.3): the base property -- a
+   value marked Secret must never become known (K) to the attacker.
+   See the 'Secrecy' lemma at the end. */
+
 theory PlainEncryptionSecrecy
 begin
 
@@ -25,6 +29,6 @@ lemma Secrecy: "All x #i. Secret(x) @i ==> not (Ex #j. K(x)@j)"
 
 lemma Executability:
   exists-trace
-  "∃ m #i. Completed(m) @ i"
+  "Ex m #i. Completed(m) @ i"
 
 end

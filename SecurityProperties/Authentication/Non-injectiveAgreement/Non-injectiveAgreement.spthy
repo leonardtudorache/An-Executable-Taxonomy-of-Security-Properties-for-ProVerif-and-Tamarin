@@ -18,6 +18,10 @@ builtins: asymmetric-encryption
  */
 
 
+/* Non-injective Agreement (Section 4.2.1): both sides commit to the
+   same data, but without the 1-to-1 guarantee injective agreement
+   adds. See the 'noninjective_agreement' lemma at the end. */
+
 // Public key infrastructure
 rule Register_pk:
   [ Fr(~ltkA) ]
@@ -61,7 +65,7 @@ rule R_1:
     ]
   --[ IN_R_1_ni( ni, m1 )
     , OUT_R_1( m2 )
-    , Running(I, $R, <'init',ni,~nr>)
+    , Start(I, $R, <'init',ni,~nr>)
     , Create(I)
     ]->
     [ Out( m2 )
@@ -78,8 +82,8 @@ rule I_2:
     , !Pk(R, pkR)
     ]
   --[ IN_I_2_nr( nr, m2)
-    // , Commit (I, R, <'init',ni,nr>)
-    , Running(R, I, <'resp',ni,nr>) 
+    // , End (I, R, <'init',ni,nr>)
+    , Start(R, I, <'resp',ni,nr>) 
     ]->
     [ Out( m3 )
     , Secret(I,R,nr)
@@ -91,7 +95,7 @@ rule R_2:
     , !Ltk(R, ltkR)
     , In( aenc{'3', nr}pk(ltkR) )
     ]
-  --[ Commit (R, I, <'resp',ni,nr>)
+  --[ End (I, R, <'resp',ni,nr>)
     ]->
     [ Secret(R,I,nr)
     , Secret(R,I,ni)
@@ -133,8 +137,9 @@ lemma types [sources]:
     )
   "
 
+  // Non-injective Agreement: End(a,b,t) requires a matching Start(a,b,t)
   lemma noninjective_agreement:
-    "All a b t #i. Commit(a,b,t) @i ==> 
-      (Ex #j. Running(a,b,t) @j)"
+    "All A B t #i. End(B,A,t) @i ==> 
+      (Ex #j. Start(A,B,t) @j)"
 
 end

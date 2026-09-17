@@ -1,8 +1,30 @@
+(*
+  Unlinkability (Section 4.2.4): an outside observer must not tell two
+  runs of the same process apart, even if they secretly use different
+  identities. This is the taxonomy paper's own worked example,
+  checked via observational equivalence (ProVerif's choice[...]):
+  one session always uses U, the other may use U or V.
+*)
+
 free c : channel.
 type uid. type nonce.
 fun pid(uid, nonce): bitstring.
 
 free U, V : uid [private].
+
+(* --- Executability -------------------------------------------------
+   NOT AVAILABLE for this model, and deliberately so. ProVerif refuses a
+   biprocess that also carries correspondence queries:
+
+       Error: Queries are incompatible with choice.
+
+   so the "query event(...)" executability check that every other .pv
+   model in this repository now carries cannot be added here. Read the
+   equivalence result together with the fact that session() is a
+   three-line process whose only branch is an unconditional output: it
+   cannot fail to run today. If it ever grows a guard, the equivalence
+   could begin to hold trivially with nothing in the model to detect it.
+*)
 
 let session(u: uid) =
   new r: nonce;

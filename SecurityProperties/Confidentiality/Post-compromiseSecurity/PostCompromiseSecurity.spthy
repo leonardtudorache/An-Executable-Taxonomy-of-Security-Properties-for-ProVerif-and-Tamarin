@@ -1,68 +1,100 @@
+/* Post-Compromise Security (Section 4.2.3): even after a full
+   compromise, a later key-agreement ('healing') step makes future
+   communication secure again. Compromise/Heal mark those two moments;
+   see the detailed rule comments below and the PCS lemma at the end. */
+
 theory DiffieHellman_PCS_Sent
 begin
 
 builtins: diffie-hellman, symmetric-encryption, signing
 functions: h/1, kdf/2
 
-/* --- Setup --- */
 rule Initialize_Identities:
   [ Fr(~skA), Fr(~skB) ]
-  --[ Unique() ]->
+  --[ UniqueKeys() ]->
   [ !Ltk($A, ~skA), !Pk($A, pk(~skA)),
     !Ltk($B, ~skB), !Pk($B, pk(~skB)),
     Out(pk(~skA)), Out(pk(~skB)) ]
 
+/* rk0 is stored behind a PERSISTENT fact so it can be revealed at
+   any point in the trace, and so revealing it does not consume or
+   gate the state the healing rules below need. The protocol can
+   reach Heal/Send independently of whether a compromise ever
+   happens. */
 rule Initialize_Shared_State:
   [ Fr(~rk0) ]
-  --[ Unique() ]->
-  [ State_Shared($A, $B, ~rk0) ]
+  --[ UniqueState() ]->
+  [ !Rk0Store($A, $B, ~rk0), State_Alice($A, $B, ~rk0), State_Bob($A, $B, ~rk0) ]
 
-/* --- PHASE 1: The Compromise (Backward Secrecy Target) --- */
-rule Attacker_Leads_RK:
-    [ State_Shared(A, B, rk0) ]
-  --[ Compromise(A, B) ]->
-    [ Out(rk0), State_Alice(A, B, rk0), State_Bob(A, B, rk0) ]
+/* --- Compromise: a standalone rule, firable at any trace point --- */
+rule Reveal_RK:
+    [ !Rk0Store($A, $B, rk0) ]
+  --[ Compromise($A, $B) ]->
+    [ Out(rk0) ]
 
-/* --- PHASE 2: The Healing --- */
+/* --- Healing (runs whether or not a compromise ever occurs) ---
+   Agent identities are matched with $-prefixed (public-name) pattern
+   variables throughout, matching how they were produced above. The
+   DH exponents are named ~expA/~expB rather than ~a/~b: Tamarin's
+   wellformedness check flags a fresh variable and a public variable
+   that differ only by case (~a vs $A, ~b vs $B) as a likely typo,
+   which is what the "mismatching sorts or capitalization" warnings
+   were about. */
 rule Alice_Send_DH:
-    [ State_Alice(A, B, rk0), !Ltk(A, skA), Fr(~a) ]
+    [ State_Alice($A, $B, rk0), !Ltk($A, skA), Fr(~expA) ]
   -->
-    [ Out(<'g'^~a, sign('g'^~a, skA)>), St_Alice_1(A, B, rk0, ~a) ]
+    [ Out(<'g'^~expA, sign('g'^~expA, skA)>), St_Alice_1($A, $B, rk0, ~expA) ]
 
 rule Alice_Complete_Healing_And_Send:
-    [ St_Alice_1(A, B, rk0, ~a), In(<gb, sigB>), !Pk(B, pkB), Fr(~secret_msg) ]
+    [ St_Alice_1($A, $B, rk0, ~expA), In(<gb, sigB>), !Pk($B, pkB), Fr(~secret_msg) ]
   --[ Eq(verify(sigB, gb, pkB), true),
-      Heal(A, B, h(kdf(rk0, gb^~a))),
-      Send(A, B, ~secret_msg) // Tracking the specific sent message
+      Heal($A, $B, h(kdf(rk0, gb^~expA))),
+      Send($A, $B, ~secret_msg) // Tracking the specific sent message
     ]->
-    [ Out(senc(~secret_msg, h(kdf(rk0, gb^~a)))) ]
+    [ Out(senc(~secret_msg, h(kdf(rk0, gb^~expA)))) ]
 
 rule Bob_Healing_Step:
-    [ State_Bob(A, B, rk0), In(<ga, sigA>), !Ltk(B, skB), !Pk(A, pkA), Fr(~b) ]
+    [ State_Bob($A, $B, rk0), In(<ga, sigA>), !Ltk($B, skB), !Pk($A, pkA), Fr(~expB) ]
   --[ Eq(verify(sigA, ga, pkA), true),
-      Heal(A, B, h(kdf(rk0, ga^~b)))
+      Heal($A, $B, h(kdf(rk0, ga^~expB)))
     ]->
-    [ Out(<'g'^~b, sign('g'^~b, skB)>) ]
+    [ Out(<'g'^~expB, sign('g'^~expB, skB)>) ]
 
 /* --- Restrictions --- */
 restriction Equality:
   "All x y #i. Eq(x,y) @ i ==> x = y"
 
-restriction OnlyOnce:
-  "All #i #j. Unique() @ i & Unique() @ j ==> #i = #j"
+restriction OnlyOnceKeys:
+  "All #i #j. UniqueKeys() @ i & UniqueKeys() @ j ==> #i = #j"
 
-/* --- Updated Lemma --- */
-// Logic: If the attacker knows message 'm', and 'm' was sent by A to B 
-// under a key that was Healed, then a Compromise MUST have occurred AFTER the Send.
+restriction OnlyOnceState:
+  "All #i #j. UniqueState() @ i & UniqueState() @ j ==> #i = #j"
+
+/* --- Post-Compromise Security Lemma ---
+   Section 4.2.3 formal definition, using the paper's own variable
+   names for the timepoints:
+     All A,B,sck,sidA,i,j,k:
+       sent(sidA,A,B,sck,i) & K(sck,j) & heal(sidA,A,B,k) & k<i
+         ==> Ex l: compromise(sidA,A,B,l) & k<l
+   i.e. a message sent after healing (k<i) that nonetheless leaks
+   can only be explained by a compromise that happened AFTER that
+   healing step (k<l) -- a compromise before the heal would already
+   be reflected in the healed key itself, so it's the LATER
+   compromise that needs explaining. */
 lemma PCS_Property_With_Sent_Msg:
   all-traces
-  "All A B m rk #i #l #s.
-    ( K(m) @ i &             // Attacker knows the message
-      Send(A, B, m) @ s &    // The message was sent
-      Heal(A, B, rk) @ l &   // The key used was healed
-      #s = #l                // The send and healing happened in the same step
+  "All A B m rk #i #j #k.
+    ( Send(A, B, m) @ i &
+      K(m) @ j &
+      Heal(A, B, rk) @ k &
+      #k < #i
     )
     ==> 
-    ( Ex #k. Compromise(A, B) @ k & s < k )" // Compromise must be later than the send
+    ( Ex #l. Compromise(A, B) @ l & #k < #l )"
+
+/* Sanity check: the protocol can still complete a healed exchange */
+lemma Executability:
+  exists-trace
+  "Ex A B m #s. Send(A, B, m) @ s"
 
 end
