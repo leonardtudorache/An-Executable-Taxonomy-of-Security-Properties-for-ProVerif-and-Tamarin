@@ -2,7 +2,7 @@
    the long-term keys leak. Reveal_P_sk/Reveal_Q_sk below model
    that leak; see the 'forward_secrecy' lemma at the end. */
 
-theory Generated
+theory ForwardSecrecy
 begin
 
 builtins: revealing-signing, diffie-hellman, asymmetric-encryption, symmetric-encryption

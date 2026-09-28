@@ -1,0 +1,95 @@
+(*
+  Non-equivocation, channel-side (Section 4.2.2).
+
+    send(e, m)@i      endpoint e sent message m at time i
+    accepted(e, m)@i  endpoint e accepted message m at time i
+
+  (i) faithfulness, (ii) in-order delivery, (iii) uniqueness.
+
+  Sender A sends m1, m2, m3 to B over channel ch. Each message is signed
+  together with ch and the previous message, and B only accepts the
+  direct successor of the last message it accepted. Endpoints are
+  ep(agent, ch).
+*)
+
+set preciseActions = true.
+
+free c: channel.
+
+type host.
+type skey.
+type pkey.
+type endpoint.
+
+fun pk(skey): pkey.
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, sk: skey; checksign(sign(m, sk), pk(sk)) = m.
+
+(* Endpoint = agent + channel id *)
+fun ep(host, bitstring): endpoint [data].
+
+(* Predecessor of the first message *)
+const start: bitstring.
+free A, B: host.
+
+event send(endpoint, bitstring).
+event accepted(endpoint, bitstring).
+
+(* ProVerif only allows time comparisons after ==>, so
+   "A && k < j ==> C" is written as "A ==> j <= k || C". *)
+
+(* (i) Faithfulness *)
+query e1: endpoint, e2: endpoint, mj: bitstring, mk: bitstring,
+      i: time, j: time, k: time, l: time;
+    event(accepted(e1, mj))@i && event(send(e2, mj))@j &&
+    event(send(e2, mk))@k
+    ==> j <= k || (event(accepted(e1, mk))@l && l < i).
+
+(* (ii) In-order delivery *)
+query e1: endpoint, e2: endpoint, mi: bitstring, mj: bitstring,
+      i: time, j: time, k: time, l: time;
+    event(accepted(e1, mi))@i && event(accepted(e1, mj))@j
+    ==> j <= i || (event(send(e2, mi))@k && event(send(e2, mj))@l && k < l).
+
+(* (iii) Uniqueness *)
+query e1: endpoint, m: bitstring, i: time, j: time;
+    event(accepted(e1, m))@i && event(accepted(e1, m))@j ==> i = j.
+
+(* Reachability *)
+query e: endpoint, m: bitstring; event(accepted(e, m)).
+
+(* Sender: three messages, each signed with ch and its predecessor *)
+let Sender(hA: host, ch: bitstring, skA: skey) =
+    new m1: bitstring;
+    event send(ep(hA, ch), m1);
+    out(c, (ch, m1, sign((ch, start, m1), skA)));
+
+    new m2: bitstring;
+    event send(ep(hA, ch), m2);
+    out(c, (ch, m2, sign((ch, m1, m2), skA)));
+
+    new m3: bitstring;
+    event send(ep(hA, ch), m3);
+    out(c, (ch, m3, sign((ch, m2, m3), skA))).
+
+(* Receiver: accepts a message only if it follows the last accepted one *)
+let Receiver(hB: host, ch: bitstring, pkA: pkey) =
+    in(c, (=ch, x1: bitstring, s1: bitstring));
+    if checksign(s1, pkA) = (ch, start, x1) then
+    event accepted(ep(hB, ch), x1);
+
+    in(c, (=ch, x2: bitstring, s2: bitstring));
+    if checksign(s2, pkA) = (ch, x1, x2) then
+    event accepted(ep(hB, ch), x2);
+
+    in(c, (=ch, x3: bitstring, s3: bitstring));
+    if checksign(s3, pkA) = (ch, x2, x3) then
+    event accepted(ep(hB, ch), x3).
+
+(* One key for A; unboundedly many channels, each with its own ch *)
+process
+    new skA: skey;
+    out(c, pk(skA));
+    !( new ch: bitstring;
+       out(c, ch);
+       ( Sender(A, ch, skA) | Receiver(B, ch, pk(skA)) ) )

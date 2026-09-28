@@ -11,7 +11,7 @@ builtins: signing
 /* 1. Setup: Generate keys and publish the public key */
 rule Setup:
     [ Fr(~skA) ]
-  --[ OnlyOnce() ]->
+  -->
     [ !LtkA(~skA), !PkA(pk(~skA)), Out(pk(~skA)) ]
 
 /* 2. Process A: Sign a fresh message */
@@ -35,9 +35,6 @@ rule ProcessB:
 
 restriction Equality:
     "All x y #i. Eq(x, y) @ i ==> x = y"
-
-restriction OnlyOnce:
-    "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
 
 /* --- Lemmas --- */
 

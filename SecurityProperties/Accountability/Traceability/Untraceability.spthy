@@ -11,7 +11,7 @@ builtins: symmetric-encryption
 /* 1. Setup: Register Tags with a shared key k */
 rule Register_Tag:
     [ Fr(~id), Fr(~k) ]
-  --[ OnlyOnce() ]->
+  -->
     [ !SharedKey(~id, ~k) ]
 
 /* 2. Reader: Initiates the protocol */
@@ -46,9 +46,6 @@ rule Reader_2:
 
 restriction Equality:
     "All x y #i. Eq(x, y) @ i ==> x = y"
-
-restriction OnlyOnce:
-    "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
 
 /* --- Lemmas --- */
 

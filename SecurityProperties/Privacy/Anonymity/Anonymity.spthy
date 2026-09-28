@@ -13,7 +13,7 @@ rule Setup:
     [ Fr(~k)    // Generate fresh key k
     , Fr(~p_id) // Generate private p_id
     ]
-  --[ OnlyOnce() ]->
+  -->
     [ !SharedKey(~k)
     , !PrivateID(~p_id)
     ]
@@ -46,7 +46,4 @@ lemma Secret_ID:
     "All p_id #i. Actor(p_id) @ i ==> not (Ex #j. K(p_id) @ j)"
 
 /* Restriction to ensure setup only runs once */
-restriction Singleton:
-    "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
-
 end

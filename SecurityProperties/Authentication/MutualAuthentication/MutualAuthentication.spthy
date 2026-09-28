@@ -12,7 +12,7 @@ functions: nonce_to_bitstring/1, messtermI/2, messtermR/2
 
 rule Register_Server:
   [ Fr(~sks) ]
-  --[ RegisterServer() ]->
+  -->
   [ !LtkS(~sks), !PkS(pk(~sks)), Out(pk(~sks)) ]
 
 rule Register:
@@ -22,9 +22,6 @@ rule Register:
 
 restriction Register_once:
   "All x #i #j. Register(x) @ i & Register(x) @ j ==> #i = #j"
-
-restriction One_server:
-  "All #i #j. RegisterServer() @ i & RegisterServer() @ j ==> #i = #j"
 
 rule Initiator_start:
   [

@@ -1,0 +1,99 @@
+/*
+  Non-equivocation, channel-side (Section 4.2.2).
+
+    Send(e, m) @ i      endpoint e sent message m at time i
+    Accepted(e, m) @ i  endpoint e accepted message m at time i
+
+  (i) faithfulness, (ii) in-order delivery, (iii) uniqueness.
+
+  Sender A sends m1, m2, m3 to B over channel ch. Each message is signed
+  together with ch and the previous message, and B only accepts the
+  direct successor of the last message it accepted. Endpoints are
+  <agent, ch>. Like the ProVerif model, each channel carries three
+  messages; the number of channels is unbounded.
+*/
+
+theory NonEquivocation_ChannelSide
+begin
+
+builtins: signing
+
+/* Long-term signing key of an agent */
+rule Register_PK:
+    [ Fr(~ltk) ]
+  -->
+    [ !Ltk($A, ~ltk), !Pk($A, pk(~ltk)), Out(pk(~ltk)) ]
+
+/* A opens channel ch to B */
+rule Open_Channel:
+    [ Fr(~ch) ]
+  -->
+    [ Sender1($A, $B, ~ch), Receiver1($B, $A, ~ch), Out(~ch) ]
+
+/* Sender: three messages, each signed with ch and its predecessor.
+   Only m and the signature are sent; the receiver knows ch and the
+   predecessor from its own state. */
+rule Send_1:
+    [ Sender1(A, B, ~ch), !Ltk(A, ltk), Fr(~m1) ]
+  --[ Send(<A, ~ch>, ~m1) ]->
+    [ Sender2(A, B, ~ch, ~m1), Out(<~m1, sign(<~ch, 'start', ~m1>, ltk)>) ]
+
+rule Send_2:
+    [ Sender2(A, B, ~ch, ~m1), !Ltk(A, ltk), Fr(~m2) ]
+  --[ Send(<A, ~ch>, ~m2) ]->
+    [ Sender3(A, B, ~ch, ~m2), Out(<~m2, sign(<~ch, ~m1, ~m2>, ltk)>) ]
+
+rule Send_3:
+    [ Sender3(A, B, ~ch, ~m2), !Ltk(A, ltk), Fr(~m3) ]
+  --[ Send(<A, ~ch>, ~m3) ]->
+    [ Out(<~m3, sign(<~ch, ~m2, ~m3>, ltk)>) ]
+
+/* Receiver: accepts a message only if it follows the last accepted one */
+rule Accept_1:
+    [ Receiver1(B, A, ~ch), !Pk(A, pkA), In(<x1, s1>) ]
+  --[ Eq(verify(s1, <~ch, 'start', x1>, pkA), true),
+      Accepted(<B, ~ch>, x1) ]->
+    [ Receiver2(B, A, ~ch, x1) ]
+
+rule Accept_2:
+    [ Receiver2(B, A, ~ch, x1), !Pk(A, pkA), In(<x2, s2>) ]
+  --[ Eq(verify(s2, <~ch, x1, x2>, pkA), true),
+      Accepted(<B, ~ch>, x2) ]->
+    [ Receiver3(B, A, ~ch, x2) ]
+
+rule Accept_3:
+    [ Receiver3(B, A, ~ch, x2), !Pk(A, pkA), In(<x3, s3>) ]
+  --[ Eq(verify(s3, <~ch, x2, x3>, pkA), true),
+      Accepted(<B, ~ch>, x3) ]->
+    [ ]
+
+restriction Equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+/* (i) Faithfulness */
+lemma faithfulness:
+    "All e1 e2 mj mk #i #j #k.
+       Accepted(e1, mj) @ i & Send(e2, mj) @ j &
+       Send(e2, mk) @ k & k < j
+       ==> (Ex #l. Accepted(e1, mk) @ l & l < i)"
+
+/* (ii) In-order delivery */
+lemma in_order_delivery:
+    "All e1 mi mj #i #j.
+       Accepted(e1, mi) @ i & Accepted(e1, mj) @ j & i < j
+       ==> (Ex e2 #k #l. Send(e2, mi) @ k & Send(e2, mj) @ l & k < l)"
+
+/* (iii) Uniqueness */
+lemma uniqueness:
+    "All e1 m #i #j.
+       Accepted(e1, m) @ i & Accepted(e1, m) @ j
+       ==> #i = #j"
+
+/* Sanity: B accepts all three messages */
+lemma Executability:
+    exists-trace
+    "Ex e m1 m2 m3 #i1 #i2 #i3.
+       Accepted(e, m1) @ i1 & Accepted(e, m2) @ i2 & Accepted(e, m3) @ i3 &
+       i1 < i2 & i2 < i3"
+
+end

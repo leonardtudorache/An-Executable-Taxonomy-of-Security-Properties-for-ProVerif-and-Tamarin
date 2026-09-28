@@ -1,116 +1,53 @@
-theory ChannelNonEquivocation
+/*
+  Non-equivocation, signer-side (Section 4.2.2).
+
+    Valid_sig(k, m)  m is valid under public key k: it was signed with
+                     the matching private key and verification succeeded.
+
+    All k m1 m2. Valid_sig(k, m1) & Valid_sig(k, m2) ==> m1 = m2
+
+  Each signer instance gets a one-time key and signs only once, so no
+  two different messages can be valid under the same key.
+*/
+
+theory NonEquivocation_SignerSide
 begin
 
 builtins: signing
-functions: czero/0, succ/1
 
-/*
-  Non-equivocation (channel-side), Section 4.2.2 of the taxonomy:
-    Sent(A,B,m,c)      Agent A sent message m, tagged with sequence
-                       counter c, to B.
-    Accepted(A,B,m,c)  Agent B accepted message m, tagged with
-                       sequence counter c, from A.
-*/
-
-rule Register_PK:
-    [ Fr(~skA) ]
+/* New signer instance with a fresh one-time key; public key is registered */
+rule Instance_Key:
+    [ Fr(~sk) ]
   -->
-    [ !Ltk($A, ~skA), !Pk($A, pk(~skA)), Out(pk(~skA)) ]
+    [ SigningSlot($A, ~sk), !InstancePk($A, pk(~sk)), Out(pk(~sk)) ]
 
-/* --- Signer: emits the two-message chain --- */
-rule Signer_Send_Zero:
-    [ !Ltk($A, skA), Fr(~m0) ]
-  --[ Sent($A, $B, ~m0, czero()) ]->
-    [ Out(<$A, $B, ~m0, czero(), sign(<$A, $B, ~m0, czero()>, skA)>),
-      !SignerSentZero($A, $B, ~m0) ]
+/* Sign one message chosen by the attacker; the slot is used up */
+rule Sign_Once:
+    [ SigningSlot($A, sk), In(m) ]
+  -->
+    [ Out(<m, sign(m, sk)>) ]
 
-/* !SignerSentZero is PERSISTENT on purpose: a signer that replays it
-   could in principle try to sign a second, different message at
-   succ(czero()) after the same zero-message (an equivocation
-   attempt at the second step). The point of this model is that the
-   receiver's linear ReceiverAt state rejects a conflicting second
-   delivery regardless -- see Receiver_Accept_Succ, which consumes
-   ReceiverAt exactly once. */
-rule Signer_Send_Succ:
-    [ !Ltk($A, skA), !SignerSentZero($A, $B, m0), Fr(~m1) ]
-  --[ Sent($A, $B, ~m1, succ(czero())) ]->
-    [ Out(<$A, $B, ~m1, succ(czero()), sign(<$A, $B, ~m1, succ(czero())>, skA)>) ]
-
-/* --- Receiver: accepts czero() at most once per (A,B) (via the
-   restriction below), then accepts succ(czero()) at most once per
-   zero-acceptance (ReceiverAt is a LINEAR fact, consumed by the one
-   Receiver_Accept_Succ that uses it). ReceiverAt carries the accepted
-   zero-message forward so AcceptedLink can name it as the
-   completeness witness, without needing an unbound existential. --- */
-rule Receiver_Accept_Zero:
-    [ !Pk($A, pkA), In(<$A, $B, m0, czero(), sig>) ]
-  --[ Eq(verify(sig, <$A, $B, m0, czero()>, pkA), true),
-      Accepted($A, $B, m0, czero()),
-      AcceptedZero($A, $B)
-    ]->
-    [ ReceiverAt($A, $B, m0) ]
-
-rule Receiver_Accept_Succ:
-    [ !Pk($A, pkA), ReceiverAt($A, $B, m0), In(<$A, $B, m1, succ(czero()), sig>) ]
-  --[ Eq(verify(sig, <$A, $B, m1, succ(czero())>, pkA), true),
-      Accepted($A, $B, m1, succ(czero())),
-      AcceptedLink($A, $B, m0, m1)
+/* Any verifier checks the signature under a registered key */
+rule Verify:
+    [ !InstancePk($A, k), In(<m, s>) ]
+  --[ Eq(verify(s, m, k), true),
+      Valid_sig(k, m)
     ]->
     [ ]
 
-/* --- Restrictions --- */
 restriction Equality:
     "All x y #i. Eq(x, y) @ i ==> x = y"
 
-/* The receiver's chain can only ever START once per (A,B): without
-   this, Receiver_Accept_Zero could fire twice and accept two
-   different messages at czero() (an equivocation at the base of the
-   chain) -- Signer_Send_Zero itself is not persistent/guarded, so it
-   can legitimately be invoked more than once. */
-restriction Zero_Accepted_Once:
-    "All A B #i #j. AcceptedZero(A, B) @ i & AcceptedZero(A, B) @ j ==> #i = #j"
+/* Non-equivocation */
+lemma non_equivocation:
+    "All k m1 m2 #i #j.
+       Valid_sig(k, m1) @ i & Valid_sig(k, m2) @ j
+       ==> m1 = m2"
 
-/* --- Lemmas --- */
-
-/* (i) Completeness: accepting succ(czero()) implies czero() was
-   already accepted earlier, and specifically that AcceptedLink names
-   the very message that was accepted -- the same pattern used to fix
-   Non-equivocation.pv's completeness query (an explicit witness
-   carried by the rules, not an unbound existential). */
-lemma completeness:
-    "All A B m0 m1 #i.
-      AcceptedLink(A, B, m0, m1) @ i
-      ==> (Ex #j. Accepted(A, B, m0, czero()) @ j & j < i)"
-
-/* (ii) Order preservation. NOTE: with only two fixed counter values
-   (czero(), succ(czero())) there is no separate "adjacency" to state
-   -- this lemma is structurally identical to completeness above. The
-   distinction only becomes meaningful again for a chain of three or
-   more steps, where order preservation additionally has to rule out
-   skipping ahead (e.g. accepting succ(succ(c)) before succ(c)), which
-   completeness alone does not cover. Kept as its own named lemma for
-   parity with the paper's three clauses, not because it adds proof
-   content in this 2-step instance. */
-lemma order_preservation_adjacent:
-    "All A B m0 m1 #i.
-      AcceptedLink(A, B, m0, m1) @ i
-      ==> (Ex #j. Accepted(A, B, m0, czero()) @ j & j < i)"
-
-/* (iii) Uniqueness */
-lemma uniqueness:
-    "All A B m1 m2 c #i1 #i2.
-      Accepted(A, B, m1, c) @ i1 &
-      Accepted(A, B, m2, c) @ i2
-      ==> m1 = m2"
-
-/* Soundness: an accepted message really was sent by the claimed signer */
-lemma soundness:
-    "All A B m c #i.
-      Accepted(A, B, m, c) @ i
-      ==> (Ex #j. Sent(A, B, m, c) @ j & j < i)"
-
+/* Sanity: a message can be validated twice under the same key */
 lemma Executability:
     exists-trace
-    "Ex A B m0 m1 #i #j. Accepted(A, B, m0, czero()) @ i & AcceptedLink(A, B, m0, m1) @ j"
+    "Ex k m #i #j.
+       Valid_sig(k, m) @ i & Valid_sig(k, m) @ j & not (#i = #j)"
 
 end

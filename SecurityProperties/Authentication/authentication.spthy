@@ -28,7 +28,7 @@ builtins: signing
 /* 1. Setup: generate long-term signing keys for A and B */
 rule Setup:
     [ Fr(~skA), Fr(~skB) ]
-  --[ OnlyOnce() ]->
+  -->
     [ !LtkA(~skA), !LtkB(~skB),
       !PkA(pk(~skA)), !PkB(pk(~skB)),
       Out(pk(~skA)), Out(pk(~skB)) ]
@@ -79,9 +79,6 @@ rule LeakB:
 
 restriction Equality:
   "All x y #i. Eq(x,y) @ i ==> x = y"
-
-restriction OnlyOnce:
-  "All #i #j. OnlyOnce() @ i & OnlyOnce() @ j ==> #i = #j"
 
 /* Authentication provided some compromise did not happen:
    End(A,B,t,i) => (exists j<i : Start(B,A,t,j)) OR (exists k<i : Compromise(B,k))
