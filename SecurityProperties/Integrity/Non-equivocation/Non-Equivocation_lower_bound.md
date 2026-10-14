@@ -2,38 +2,30 @@
 
 ```mermaid
 sequenceDiagram
-    participant A as Sender A
-    participant Net as Network (attacker)
-    participant B as Receiver B
+    participant A as Process A (Sender)
+    participant B as Process B (Receiver)
 
-    Note over A, B: open channel ch, both states at start
+    Note over A: Knows skA, fresh channel id ch
+    Note over B: Knows pk(skA), ch
 
-    Note over A: send(ep(A,ch), m1)
-    A->>Net: (ch, m1, sign((ch, start, m1), skA))
-    Note over A: send(ep(A,ch), m2)
-    A->>Net: (ch, m2, sign((ch, m1, m2), skA))
-    Note over A: send(ep(A,ch), m3)
-    A->>Net: (ch, m3, sign((ch, m2, m3), skA))
+    Note over A: Generate fresh message m1
+    Note over A: Trigger event send(ep(A, ch), m1)
+    A->>B: ch, m1, sign((ch, start, m1), skA)
 
-    opt Attacker delivers m2 before m1
-        Net->>B: (ch, m2, sig2)
-        Note over B: sig2 does not verify against (ch, start, m2), rejected
-    end
+    Note over B: checksign(s1, pk(skA)) = (ch, start, x1)
+    Note over B: Trigger event accepted(ep(B, ch), x1)
 
-    Net->>B: (ch, m1, sig1)
-    Note over B: verify against (ch, start, m1): accepted(ep(B,ch), m1), last = m1
-    Net->>B: (ch, m2, sig2)
-    Note over B: verify against (ch, m1, m2): accepted(ep(B,ch), m2), last = m2
+    Note over A: Generate fresh message m2
+    Note over A: Trigger event send(ep(A, ch), m2)
+    A->>B: ch, m2, sign((ch, m1, m2), skA)
 
-    opt Attacker replays m1
-        Net->>B: (ch, m1, sig1)
-        Note over B: does not verify against (ch, m2, m1), rejected
-    end
+    Note over B: checksign(s2, pk(skA)) = (ch, x1, x2)
+    Note over B: Trigger event accepted(ep(B, ch), x2)
 
-    Net->>B: (ch, m3, sig3)
-    Note over B: verify against (ch, m2, m3): accepted(ep(B,ch), m3)
+    Note over A: Generate fresh message m3
+    Note over A: Trigger event send(ep(A, ch), m3)
+    A->>B: ch, m3, sign((ch, m2, m3), skA)
 
-    Note over A, B: (i) Faithfulness: no accepted message skips an earlier send
-    Note over A, B: (ii) In-order delivery: acceptance order = sending order
-    Note over A, B: (iii) Uniqueness: each message accepted at most once
+    Note over B: checksign(s3, pk(skA)) = (ch, x2, x3)
+    Note over B: Trigger event accepted(ep(B, ch), x3)
 ```

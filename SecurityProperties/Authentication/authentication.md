@@ -19,6 +19,4 @@ sequenceDiagram
 
     B->>B: checksign(sig, pk(skA)) = nB
     Note over B: Session accepted
-
-    Note over A, B: This diagram depicts authentication.pv, whose signatures are<br/>message-recovering, so message 2 is the signature alone.<br/>authentication.spthy sends the nonces alongside it: &lt;nA, nB, sign(&lt;nA,nB,'B'&gt;,skB)&gt;.
 ```

@@ -28,6 +28,4 @@ sequenceDiagram
 
     Note over Responder: Verify Nb
     Note over Responder: Trigger event end(hostY, xB, (m, m6, m3))
-
-    Note over Initiator, Responder: Property: event(end(A,x,m)) ==> event(start(A,x,m))
 ```

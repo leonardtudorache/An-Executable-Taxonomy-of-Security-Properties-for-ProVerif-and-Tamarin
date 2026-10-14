@@ -31,6 +31,4 @@ sequenceDiagram
 
     Note over Responder: Verify Nb
     Note over Responder: Trigger event end(xB, hostY, NY)
-
-    Note over Initiator, Responder: Properties: event(end(x,B,m)) ==> event(start(B,x,m)) and event(end(x,A,m)) ==> event(start(A,x,m))
 ```

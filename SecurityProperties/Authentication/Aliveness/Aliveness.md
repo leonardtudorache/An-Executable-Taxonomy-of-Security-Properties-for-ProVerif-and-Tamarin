@@ -12,6 +12,4 @@ sequenceDiagram
 
     Note over A: Verify checksign(sig, pkB) = (nb, na)
     Note over A: Trigger event end()
-
-    Note over A, B: This diagram depicts Aliveness.pv. Aliveness.spthy models a<br/>different protocol (three-message Needham-Schroeder-Lowe) and carries<br/>identities and data in Start/End rather than using nullary events.
 ```

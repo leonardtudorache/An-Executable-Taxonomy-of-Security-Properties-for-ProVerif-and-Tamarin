@@ -61,9 +61,7 @@ fun messtermI(host, host): bitstring [data].
 fun messtermR(host, host): bitstring [data].
 
 event end(host, host, bitstring).
-event acceptsI(host, host, bitstring).
 event start(host, host, bitstring).
-event termR(host, host, bitstring).
 
 query x: host, m: bitstring; 
       inj-event(end(x,B,m)) ==> inj-event(start(B,x,m)).
@@ -99,7 +97,6 @@ let processInitiator(pkS: spkey, skA: skey, skB: skey) =
 	let (=Na, NX2: nonce, =hostX) = decrypt(m, skxA) in
 	let m7 = encrypt(nonce_to_bitstring(NX2), pkX) in
 	event end(xA, hostX, (m3, m));
-	event acceptsI(xA, hostX, (m3, m, m7));
 	(* Message 7 *)
 	out(c, (m7, messtermI(xA, hostX))).
 
@@ -129,7 +126,6 @@ let processResponder(pkS: spkey, skA: skey, skB: skey) =
 	(* Message 7 *)
 	in(c, m3: bitstring);
 	if nonce_to_bitstring(Nb) = decrypt(m3, skB) then
-	event termR(hostY, xB, (m, m6, m3));
 	out(c, messtermR(hostY, xB)).
 
 (* Server *)

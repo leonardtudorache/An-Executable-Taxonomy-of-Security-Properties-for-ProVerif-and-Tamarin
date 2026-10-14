@@ -25,11 +25,7 @@ sequenceDiagram
 
     Note over Initiator: Decrypt message
     Note over Initiator: Trigger event end(xA, hostX, (m3, m))
-    Note over Initiator: Trigger event acceptsI(xA, hostX, (m3, m, m7)) [unused by the query]
     Initiator->>Responder: send(encrypt(Nb, pkX))
 
     Note over Responder: Verify Nb
-    Note over Responder: Trigger event termR(hostY, xB, (m, m6, m3)) [unused by the query]
-
-    Note over Initiator, Responder: Property: inj-event(end(x,B,m)) ==> inj-event(start(x,B,m))
 ```
