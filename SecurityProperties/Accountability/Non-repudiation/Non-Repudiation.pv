@@ -1,12 +1,11 @@
-(* Based on this https://link.springer.com/chapter/10.1007/978-3-642-36830-1_13 *)
-
-
 (*
   Non-repudiation (Section 4.2.5): an agent must be able to prove
   another agent really sent a message, typically to a judge. This
   auction example checks won(bid)==>bid(bid) rather than the paper's
   exact obs(m)==>sent(m) form, but captures the same idea: a later
   claim must trace back to an earlier, real send.
+
+  Source: https://link.springer.com/chapter/10.1007/978-3-642-36830-1_13
 
   SCOPE -- what this model does NOT cover. Section 4.2.5 gives a
   second, stronger formalization,
@@ -32,15 +31,13 @@ free c: channel.
 event bid(price, identity).
 event won(price, identity).
 
-(* Query to verify non-repudiation property *)
+(* --- Queries --- *)
+
+(* Non-repudiation: a win traces back to an earlier bid *)
 query p:price, id:identity; 
     event(won(p,id)) ==> event(bid(p,id)).
 
-(* --- Executability -------------------------------------------------
-   ProVerif reports "not event(won(...)) is false" when a win is
-   REACHABLE, which is the result we want. If it ever reports "is true",
-   the auction can never complete and the correspondence above is
-   holding vacuously rather than being proved. *)
+(* Sanity check: the auction can complete *)
 query p:price, id:identity; event(won(p,id)).
 
 (* Cryptographic primitives *)
@@ -54,6 +51,9 @@ reduc forall m: bitstring, k: key;
 free bidder_price: price [private].
 free bidder_id: identity [private].
 
+(* --- Roles --- *)
+
+(* Bidder: signs and sends a bid *)
 let bidder(sk_bidder: key) =
     new n: nonce;
     let bid_msg = (bidder_price, bidder_id, n) in
@@ -63,6 +63,7 @@ let bidder(sk_bidder: key) =
     in(c, win_confirm: bitstring).
    
 
+(* Auctioneer: verifies the bid and declares the win *)
 let auctioneer(pk_bidder: key) =
     in(c, (bid_msg: bitstring, signature: bitstring));
     let (p: price, id: identity, n: nonce) = bid_msg in
@@ -72,6 +73,7 @@ let auctioneer(pk_bidder: key) =
         event won(bidder_price, bidder_id);
         out(c, win_confirm).
 
+(* Setup: bidder key pair, unbounded sessions *)
 process
     new sk_bidder: key;
     let pk_bidder = pk(sk_bidder) in 

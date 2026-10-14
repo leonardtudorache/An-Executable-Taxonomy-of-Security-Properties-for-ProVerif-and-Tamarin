@@ -20,17 +20,26 @@ event signed_by(skey, bitstring).
 event valid_sig(bitstring, pkey).
 event check().
 
+(* --- Queries --- *)
+
+(* Unforgeability: a valid signature traces back to a real signing action *)
 query m: bitstring, sk: skey; event(valid_sig(m, pk(sk))) ==> event(signed_by(sk, m)).
+
+(* Sanity check: B can verify a signature *)
 query event(check()).
 
 free skA: skey [private].
 
+(* --- Roles --- *)
+
+(* Process A: signs a fresh message *)
 let processA() =
   new m1: bitstring;
   let s1 = sign(m1, skA) in
   event signed_by(skA, m1);
   out(c, s1).
 
+(* Process B: receives a message and verifies the signature *)
 let processB(pkA: pkey) =
   new m2: bitstring;
   in(c, signed_message: bitstring);
@@ -40,6 +49,7 @@ let processB(pkA: pkey) =
   event check();
   0.
 
+(* Setup: publish the public key, unbounded sessions *)
 process
   let pkA = pk(skA) in
   out(c, pkA);

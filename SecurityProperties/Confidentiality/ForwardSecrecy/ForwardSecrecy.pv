@@ -36,17 +36,25 @@ reduc forall m: G, sk: skey;
 (* Secret message *)
 free m: bitstring [private].
 
+(* --- Queries --- *)
+
+(* Forward secrecy: m stays secret although the long-term keys leak later *)
 query attacker(m).
 
 event PSendsMessage(key).
 event QReceivesMessage(key).
 
+(* Sanity check: Q can receive the message *)
 query k: key;
   event(QReceivesMessage(k)).
 
+(* Agreement: Q's receipt corresponds to P sending under the same key *)
 query k: key;
   inj-event(QReceivesMessage(k)) ==> inj-event(PSendsMessage(k)).
 
+(* --- Roles --- *)
+
+(* P: sends g^a signed, receives g^b, sends the secret under the key *)
 let P(sk_p: skey, pk_q: pkey) =
   new a: exponent;
   let g_a = exp(g, a) in
@@ -61,6 +69,7 @@ let P(sk_p: skey, pk_q: pkey) =
     out(c, enc(m, k));
     0.
 
+(* Q: receives g^a, replies with g^b signed, decrypts the message *)
 let Q(sk_q: skey, pk_p: pkey) =
   in(c, g_a_signed: G);
   let g_a = checksign(g_a_signed, pk_p) in
@@ -74,6 +83,7 @@ let Q(sk_q: skey, pk_p: pkey) =
     event QReceivesMessage(k);
   0.
 
+(* Setup: long-term keys; phase 1 leaks them after the exchange *)
 process
   new sk_p: skey;
   new sk_q: skey;

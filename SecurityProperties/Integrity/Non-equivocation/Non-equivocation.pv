@@ -28,12 +28,16 @@ table instanceKeys(host, pkey).
 
 event valid_sig(pkey, bitstring).
 
+(* --- Queries --- *)
+
 (* Non-equivocation *)
 query k: pkey, m1: bitstring, m2: bitstring;
     event(valid_sig(k, m1)) && event(valid_sig(k, m2)) ==> m1 = m2.
 
-(* Reachability *)
+(* Sanity check: a signature can be validated *)
 query k: pkey, m: bitstring; event(valid_sig(k, m)).
+
+(* --- Roles --- *)
 
 (* Signer instance: fresh one-time key, signs one message chosen by the attacker *)
 let Instance(A: host) =
@@ -50,6 +54,7 @@ let Verifier(V: host) =
     let m = checksign(s, k) in
     event valid_sig(k, m).
 
+(* Setup: unbounded signer instances and verifiers *)
 process
     ( !( in(c, A: host); Instance(A) ) )
   | ( !( in(c, V: host); Verifier(V) ) )

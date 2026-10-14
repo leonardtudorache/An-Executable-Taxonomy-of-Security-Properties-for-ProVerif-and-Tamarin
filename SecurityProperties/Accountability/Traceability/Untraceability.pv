@@ -1,11 +1,11 @@
-(* Model create based on: https://ieeexplore.ieee.org/abstract/document/5402514 *)
 (*
-  Note: Section 4.2.5 defines Traceability as a TRUSTED PARTY being
-  ABLE to trace a message back to its sender. This file instead
-  models the related but opposite-flavored privacy property -- RFID
-  untraceability: that a tag's sessions CANNOT be linked by an
-  observer. Keep this naming difference in mind when comparing to the
-  taxonomy's formal Traceability definition.
+  Note: Section 4.2.5's Traceability requires a trusted party to be
+  able to trace a sender.
+  untraceability -- that a tag's sessions cannot be linked by an
+  observer (a related but opposite-flavored privacy property).
+  See the queries below.
+
+  Source: https://ieeexplore.ieee.org/abstract/document/5402514
 *)
 
 (* Types and constants *)
@@ -29,7 +29,9 @@ event TagEnd(tag_id).
 event ReaderStart(tag_id).
 event ReaderEnd(tag_id).
 
-(* Correspondence queries *)
+(* --- Queries --- *)
+
+(* Correspondence: ReaderEnd implies TagStart *)
 query id: tag_id; 
     event(ReaderEnd(id)) ==> event(TagStart(id)).
 
@@ -41,9 +43,13 @@ query t1: tag_id, t2: tag_id;
     event(TagEnd(t1)) && event(TagEnd(t2)) ==>
     (t1 = t2) || (event(TagStart(t1)) && event(TagStart(t2))).
 
+(* Sanity check: the protocol can finish *)
 query id: tag_id; event(ReaderEnd(id)).
 query id: tag_id; event(TagEnd(id)).
 
+(* --- Roles --- *)
+
+(* Tag: responds to the Welcome message *)
 let Tag(id: tag_id, k: key) =
     in(c, x: message);
     if x = Welcome then (
@@ -54,6 +60,7 @@ let Tag(id: tag_id, k: key) =
         event TagEnd(id)
     ).
 
+(* Reader: sends Welcome, then decrypts the tag response *)
 let Reader(k: key) =
     new n: bitstring;
     out(c, Welcome);
@@ -65,12 +72,13 @@ let Reader(k: key) =
         out(db, id)
     ).
 
+(* Database: answers reader lookups *)
 let Database =
     !in(db, id: tag_id);
     out(db, true).
 
 process
-    (* Generate shared key *)
+    (* Setup: shared key, unbounded sessions *)
     new k: key;
 
     (!Database) |

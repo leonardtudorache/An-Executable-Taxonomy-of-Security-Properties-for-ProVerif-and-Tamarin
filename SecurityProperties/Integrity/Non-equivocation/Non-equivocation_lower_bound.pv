@@ -38,6 +38,8 @@ event accepted(endpoint, bitstring).
 (* ProVerif only allows time comparisons after ==>, so
    "A && k < j ==> C" is written as "A ==> j <= k || C". *)
 
+(* --- Queries --- *)
+
 (* (i) Faithfulness *)
 query e1: endpoint, e2: endpoint, mj: bitstring, mk: bitstring,
       i: time, j: time, k: time, l: time;
@@ -55,8 +57,10 @@ query e1: endpoint, e2: endpoint, mi: bitstring, mj: bitstring,
 query e1: endpoint, m: bitstring, i: time, j: time;
     event(accepted(e1, m))@i && event(accepted(e1, m))@j ==> i = j.
 
-(* Reachability *)
+(* Sanity check: B accepts a message *)
 query e: endpoint, m: bitstring; event(accepted(e, m)).
+
+(* --- Roles --- *)
 
 (* Sender: three messages, each signed with ch and its predecessor *)
 let Sender(hA: host, ch: bitstring, skA: skey) =

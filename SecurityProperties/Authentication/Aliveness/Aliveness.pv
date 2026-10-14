@@ -23,16 +23,19 @@ reduc forall m: bitstring, k: key; checksign(sign(m, k), pk(k)) = m.
 event start().   
 event end().   
 
-(* Query: if A finishes, some run of the responder must have started.
+(* --- Queries --- *)
+
+(* Aliveness: if A finishes, some run of the responder must have started.
    No nonce and no peer are matched -- agreement on the exchanged data
    is weak / non-injective agreement, not aliveness. *)
 query x: bitstring; event(end()) ==> event(start()).
 
-(* --- Executability -------------------------------------------------
-   A correspondence "end ==> start" is trivially true when end is
-   unreachable, so check that the initiator can actually finish. *)
+(* Sanity check: the initiator can finish *)
 query event(end()).
 
+(* --- Roles --- *)
+
+(* Initiator A *)
 let initiatorA(pkB: key) =
   new na: bitstring;
   out(c, na);
@@ -41,12 +44,14 @@ let initiatorA(pkB: key) =
   if checksign(sig, pkB) = (nb, na) then 
     event end().
 
+(* Responder B *)
 let responderB(skB: key) =
   in(c, na: bitstring);
   event start();
   new nb: bitstring;
   out(c, (nb, sign((nb, na), skB))).
 
+(* Setup: responder key pair, unbounded sessions *)
 process
   new skB: key;
   let pkB = pk(skB) in

@@ -57,7 +57,7 @@ event compromise(host).             (* compromise(A), abstracted over t/i *)
 query A: host, B: host, t: bitstring;
   event(end(A,B,t)) ==> (event(start(B,A,t)) || event(compromise(B))).
 
-(* --- Executability --- *)
+(* Sanity check: the protocol can complete a run *)
 query A: host, B: host, t: bitstring; event(end(A,B,t)).
 
 (* --- Roles --- *)

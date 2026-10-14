@@ -37,12 +37,17 @@ event check().
 event compromise(id_key, id_key).
 event heal(id_key, id_key, key).
 
+(* --- Queries --- *)
+
+(* Sanity check: Bob can decrypt after healing *)
 query event(check()).
 
-(* Query: Post-Compromise Security (Backward Secrecy) *)
+(* Post-compromise security: future data stays secret after the heal *)
 query attacker(secret_future_data).
 
-(* Alice's Process *)
+(* --- Roles --- *)
+
+(* Alice: leaks her state (phase 1), then heals and sends data (phase 2) *)
 let Alice(rk_0: key, skA: id_key, pkB: id_key) =
     (* --- PHASE 1: THE COMPROMISE --- *)
     phase 1;
@@ -64,7 +69,7 @@ let Alice(rk_0: key, skA: id_key, pkB: id_key) =
         out(c, enc(secret_future_data, chain_key))
     ).
 
-(* Bob's Process *)
+(* Bob: heals and receives the data *)
 let Bob(rk_0: key, skB: id_key, pkA: id_key) =
     phase 1;
     (* Bob's state is also effectively leaked *)
@@ -87,7 +92,7 @@ let Bob(rk_0: key, skB: id_key, pkA: id_key) =
         0
     ).
 
-(* Main System *)
+(* Setup: identity keys and initial shared state *)
 process
     (* Setup long-term identity keys *)
     new skA: id_key; let pkA = pub(skA) in out(c, pkA);

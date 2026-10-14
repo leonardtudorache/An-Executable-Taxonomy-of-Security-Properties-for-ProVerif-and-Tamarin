@@ -12,25 +12,21 @@ fun pid(uid, nonce): bitstring.
 
 free U, V : uid [private].
 
-(* --- Executability -------------------------------------------------
-   NOT AVAILABLE for this model, and deliberately so. ProVerif refuses a
-   biprocess that also carries correspondence queries:
+(* Sanity check: not possible here. ProVerif rejects a biprocess that
+   also carries correspondence queries ("Queries are incompatible with
+   choice"), so the reachability query of the other models cannot be
+   added. session() is a plain output with no guard, so it always runs;
+   if it ever grows a guard, re-check that the equivalence is not
+   holding vacuously. *)
 
-       Error: Queries are incompatible with choice.
+(* --- Roles --- *)
 
-   so the "query event(...)" executability check that every other .pv
-   model in this repository now carries cannot be added here. Read the
-   equivalence result together with the fact that session() is a
-   three-line process whose only branch is an unconditional output: it
-   cannot fail to run today. If it ever grows a guard, the equivalence
-   could begin to hold trivially with nothing in the model to detect it.
-*)
-
+(* Session: outputs a pseudonym built from a fresh nonce *)
 let session(u: uid) =
   new r: nonce;
   (* out(c, u). *)
   out(c, pid(u, r)).
 
-(* Biprocess: left = both sessions use U; right = second uses V *)
+(* Setup: biprocess -> left = both sessions use U; right = second uses V *)
 process
   ( !session(U) | !session(choice[U, V]) )

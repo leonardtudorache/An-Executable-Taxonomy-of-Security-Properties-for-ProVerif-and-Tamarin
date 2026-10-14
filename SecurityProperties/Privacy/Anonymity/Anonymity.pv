@@ -1,8 +1,8 @@
-(* Anonymity protocol model *)
 (* Anonymity (Section 4.2.4): an agent's real identifier must stay
    hidden from the attacker even while legitimately taking part. The
    attacker should never learn p_id despite seeing the encrypted
-   traffic below. *)
+   traffic below.
+*)
 
 free c: channel.
 type key.
@@ -15,23 +15,30 @@ fun enc(bitstring, key): bitstring.
 reduc forall x:bitstring, y:key; dec(enc(x,y),y) = x.
 
   
-(* Anonymity query *)
+(* --- Queries --- *)
+
+(* Anonymity: the attacker must never learn p_id *)
 query attacker(p_id).
 
-(* --- Executability --- *)
+(* Sanity check: Q can receive a message *)
 event QReceived(bitstring).
 query m: bitstring; event(QReceived(m)).
 
+(* --- Roles --- *)
+
+(* P: encrypts a fresh message together with its id *)
 let P(p_id: bitstring) = 
     new m: bitstring;
     let m_enc = enc((m, p_id), k) in
     out(c, m_enc).
 
+(* Q: receives and decrypts *)
 let Q() = 
     in(c, enc_msg: bitstring);
     let (m: bitstring, new_id: bitstring) = dec(enc_msg, k) in
     event QReceived(m);
     0.
 
+(* Setup: one P and one Q *)
 process
   P(p_id) | Q()

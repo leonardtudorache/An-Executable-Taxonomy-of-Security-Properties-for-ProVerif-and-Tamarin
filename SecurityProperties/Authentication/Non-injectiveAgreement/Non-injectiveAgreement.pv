@@ -1,9 +1,7 @@
-(* 
-Needham-Schroeder public key protocol
-Corrected version by Lowe
-Proof of mutual authentication
-Retreived from ProVerif examples
-Can be found in the ProVerif manual as well
+(*
+  Protocol:  Needham-Schroeder public key protocol, corrected
+             version by Lowe (with a key server)
+  Source:    ProVerif examples and manual
 *)
 
 (*
@@ -56,19 +54,22 @@ free A, B: host.
    The key table consists of pairs (host, public key) *)
 table keys(host, pkey).
 
-(* Queries *)
+(* Message tags and events *)
 fun messtermI(host, host): bitstring [data].
 
 event start(host, host, bitstring).
 event end(host, host, bitstring).
 
+(* --- Queries --- *)
+
+(* Non-injective agreement: end(A,x,m) requires a matching start *)
 query x: host, m: bitstring; 
       event(end(A,x,m)) ==> event(start(x,A,m)).
 
-(* --- Executability -------------------------------------------------
-   Guards the correspondence above against holding vacuously because
-   the responder can never reach its end event. *)
+(* Sanity check: the responder can reach its end event *)
 query x: host, y: host, m: bitstring; event(end(x,y,m)).
+
+(* --- Roles --- *)
 
 (* Role of the initiator with identity xA and secret key skxA *)
 let processInitiator(pkS: spkey, skA: skey, skB: skey) =

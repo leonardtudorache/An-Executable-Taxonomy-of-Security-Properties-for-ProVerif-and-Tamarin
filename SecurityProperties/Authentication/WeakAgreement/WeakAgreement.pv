@@ -24,12 +24,20 @@ event start(pkey, pkey).
 event end(pkey, pkey).
 event reached().
 
+(* --- Queries --- *)
+
+(* Weak agreement: if A ends with B, B started a session with A *)
 query secret na.
 query pkA: pkey, pkB: pkey, na: bitstring; event(end(pkB, pkA)) ==> event(start(pkA, pkB)).
-query event(reached()). 
+
+(* Sanity check: B can complete a run *)
+query event(reached()).
 
 
 
+(* --- Roles --- *)
+
+(* Role B *)
 let B(skB: skey, pkA: pkey)= 
     new na: bitstring;
     event start(pk(skB), pkA);
@@ -43,6 +51,7 @@ let B(skB: skey, pkA: pkey)=
     event reached();
     0.
 
+(* Role A *)
 let A(skA: skey, pkB: pkey) =
     in(c, x: bitstring);
     
@@ -56,6 +65,7 @@ let A(skA: skey, pkB: pkey) =
     (* event reached(); *)
     event end(pk(skA), pkB).
 
+(* Setup: publish both public keys, unbounded sessions *)
 process
     let pkA = pk(skA) in
     let pkB = pk(skB) in
